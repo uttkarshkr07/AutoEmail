@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoEmail</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root {
+  --bg:       #111214;
+  --bg2:      #18191c;
+  --bg3:      #1f2124;
+  --bg4:      #26282d;
+  --border:   #2e3035;
+  --text:     #e8e8e8;
+  --text2:    #999;
+  --text3:    #555;
+  --accent:   #7c6af7;
+  --accent-h: #6a58e0;
+  --danger:   #e05555;
+  --success:  #3da874;
+  --warn:     #d4960a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+/* ---- Shared buttons ---- */
+.btn {
+  font-size: 12px;
+  padding: 6px 13px;
+  border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  transition: background 0.1s;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.btn:hover:not(:disabled) { background: var(--bg4); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-h); border-color: var(--accent-h); }
+.btn-stop { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn-stop:hover:not(:disabled) { background: #c03030; }
+.btn-link { background: transparent; border-color: transparent; color: var(--text2); font-size: 12px; padding: 4px 6px; }
+.btn-link:hover:not(:disabled) { color: var(--text); background: transparent; }
+
+/* ================================================================
+   LOGIN MODAL
+   ================================================================ */
+#modal-login {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+#login-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 36px 40px;
+  width: 360px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+#login-card h2 { font-size: 22px; font-weight: 700; color: var(--accent); }
+#login-card p  { font-size: 13px; color: var(--text2); }
+#login-card label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 12px; font-weight: 600; color: var(--text2);
+}
+#login-card input {
+  font-size: 13px; padding: 8px 11px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg3); color: var(--text); outline: none;
+}
+#login-card input:focus { border-color: var(--accent); }
+#login-card .btn-primary { padding: 9px; font-size: 13px; font-weight: 600; }
+#login-err { font-size: 12px; color: var(--danger); display: none; }
+
+/* ================================================================
+   HOME SCREEN
+   ================================================================ */
+#screen-home {
+  display: none; flex-direction: column; flex: 1; overflow: hidden;
+}
+#home-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#home-logo { font-size: 18px; font-weight: 700; color: var(--accent); }
+#home-user-info { display: flex; align-items: center; gap: 10px; }
+#home-user-name { font-size: 13px; color: var(--text2); }
+.btn-logout { font-size: 11px; }
+
+#home-body {
+  flex: 1; overflow-y: auto;
+  padding: 36px 40px;
+}
+#home-body h2 { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+
+#project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.proj-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color 0.15s;
+}
+.proj-card:hover { border-color: var(--accent); }
+.proj-card-name  { font-size: 15px; font-weight: 600; }
+.proj-card-meta  { font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 3px; }
+.proj-card-actions { display: flex; gap: 8px; margin-top: 4px; }
+.proj-card-actions .btn { flex: 1; text-align: center; }
+
+.new-proj-card {
+  background: transparent;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  align-items: flex-start;
+}
+.new-proj-card:hover { border-color: var(--accent); }
+.new-proj-card .plus { font-size: 24px; color: var(--text3); }
+.new-proj-card .label { font-size: 13px; color: var(--text2); }
+
+#new-proj-form {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+#new-proj-input {
+  font-size: 13px; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg3); color: var(--text); outline: none;
+  flex: 1; min-width: 140px;
+}
+#new-proj-input:focus { border-color: var(--accent); }
+
+/* ================================================================
+   APP SCREEN
+   ================================================================ */
+#screen-app { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+
+/* ---- Top bar ---- */
+#topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap;
+  background: var(--bg2);
+}
+
+#back-btn { font-size: 12px; }
+#app-title { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+#proj-name-label { font-size: 11px; color: var(--text3); white-space: nowrap; }
+#topbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+
+.topbar-group { display: flex; align-items: center; gap: 7px; }
+.topbar-group label { font-size: 11px; color: var(--text2); white-space: nowrap; }
+.topbar-input {
+  font-size: 12px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg3); color: var(--text); outline: none; width: 200px;
+}
+.topbar-input:focus { border-color: var(--accent); }
+select.topbar-input { cursor: pointer; }
+select.topbar-input option { background: var(--bg3); color: var(--text); }
+
+#upload-info { font-size: 11px; color: var(--text2); max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#upload-info.err { color: var(--danger); }
+#progress-label { font-size: 12px; color: var(--text2); }
+#api-warning    { font-size: 12px; color: var(--danger); display: none; }
+
+#gmail-status { font-size: 12px; color: var(--success); display: none; }
+
+/* ---- Tab bar ---- */
+#tab-bar {
+  display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  background: var(--bg2);
+}
+.tab-btn {
+  font-size: 13px; padding: 9px 20px;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; cursor: pointer; color: var(--text2);
+  transition: color 0.1s;
+}
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+.tab-btn:hover  { color: var(--text); }
+
+/* ---- Main area ---- */
+#main { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
+
+/* ---- Sidebar ---- */
+#sidebar {
+  width: 250px; flex-shrink: 0;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 6px 0;
+}
+
+.company-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 14px;
+  background: transparent; border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer; text-align: left; transition: background 0.1s;
+}
+.company-btn:hover  { background: var(--bg3); }
+.company-btn.active { background: var(--bg4); border-left-color: var(--accent); }
+
+.cbtn-text { flex: 1; min-width: 0; }
+.cbtn-name {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cbtn-sector {
+  font-size: 11px; color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text3); }
+.dot.loading { background: var(--warn); }
+.dot.done    { background: var(--success); }
+.dot.error   { background: var(--danger); }
+
+/* ---- Right panel ---- */
+#panel { flex: 1; padding: 24px 28px; overflow-y: auto; }
+
+.p-to { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
+.p-to strong { color: var(--text); }
+
+.p-subject-label {
+  font-size: 11px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;
+}
+.p-subject-box {
+  background: var(--bg3); border-radius: 6px;
+  padding: 8px 12px; font-size: 13px; color: var(--text); margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+.p-subject-editable { cursor: text; }
+.p-subject-editable:focus { border-color: var(--accent); outline: none; }
+
+.fmt-toolbar { display: flex; gap: 4px; margin-bottom: 6px; }
+.fmt-btn {
+  width: 28px; height: 26px;
+  border: 1px solid var(--border); background: var(--bg3);
+  border-radius: 3px; cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 0; color: var(--text);
+}
+.fmt-btn:hover { background: var(--bg4); }
+.fmt-sep { width: 1px; background: var(--border); margin: 0 2px; }
+
+.p-body-editor {
+  white-space: pre-wrap; line-height: 1.8; font-size: 13px; color: var(--text);
+  margin-bottom: 16px; min-height: 180px;
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px; outline: none; background: var(--bg3);
+}
+.p-body-editor:focus { border-color: var(--accent); }
+
+.copy-row  { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.send-row  { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+#flash     { font-size: 12px; color: var(--success); height: 18px; }
+.loading-msg { font-size: 14px; color: var(--text2); padding: 32px 0; }
+.err-title { font-size: 13px; color: var(--danger); margin-bottom: 8px; }
+.err-box {
+  background: #2a1515; border: 1px solid #5a2222; border-radius: 4px;
+  padding: 10px 12px; font-size: 12px; color: #e08080;
+  font-family: monospace; margin-bottom: 12px;
+  white-space: pre-wrap; word-break: break-all;
+}
+.muted { color: var(--text2); font-size: 13px; margin-bottom: 14px; }
+
+/* ---- Views ---- */
+#view-emails { display: flex; flex: 1; overflow: hidden; }
+
+#view-settings {
+  display: none; flex: 1; overflow-y: auto; flex-direction: column;
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 28px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.settings-header h3 { font-size: 15px; font-weight: 600; }
+.settings-save-row { display: flex; align-items: center; gap: 10px; }
+#settings-dirty { font-size: 12px; color: var(--warn); display: none; }
+#settings-saved { font-size: 12px; color: var(--success); display: none; }
+
+.settings-body { padding: 24px 28px; display: flex; flex-direction: column; gap: 28px; max-width: 100%; }
+.tmpl-section {}
+.tmpl-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.tmpl-hint  { font-size: 11px; color: var(--text2); margin-bottom: 7px; }
+.tmpl-textarea {
+  width: 100%; font-size: 13px; font-family: system-ui, sans-serif;
+  line-height: 1.7; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 4px;
+  resize: vertical; outline: none;
+  color: var(--text); background: var(--bg3);
+}
+.tmpl-textarea:focus { border-color: var(--accent); }
+.tmpl-divider { border: none; border-top: 1px solid var(--border); }
+
+/* Settings rich editor */
+.tmpl-editor-wrap { position: relative; }
+.tmpl-fmt-toolbar {
+  display: flex; gap: 3px; margin-bottom: 5px;
+  padding: 4px 6px;
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 4px 4px 0 0; border-bottom: none;
+  flex-wrap: wrap;
+}
+.tmpl-fmt-btn {
+  width: 26px; height: 24px; font-size: 12px; line-height: 1;
+  border: 1px solid var(--border); background: var(--bg3);
+  border-radius: 3px; cursor: pointer; color: var(--text); padding: 0;
+}
+.tmpl-fmt-btn:hover { background: var(--bg2); }
+.tmpl-fmt-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tmpl-fmt-sep { width: 1px; background: var(--border); margin: 0 2px; align-self: stretch; }
+.tmpl-editor {
+  width: 100%; min-height: 80px; font-size: 13px; font-family: system-ui, sans-serif;
+  line-height: 1.7; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 0 0 4px 4px;
+  outline: none; color: var(--text); background: var(--bg3);
+  overflow-y: auto; word-break: break-word;
+  white-space: pre-wrap;
+}
+.tmpl-editor:focus { border-color: var(--accent); }
+
+/* Attachments */
+.attach-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.attach-item {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 10px; font-size: 12px;
+}
+.attach-item-name { flex: 1; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-item-size { color: var(--text3); font-size: 11px; white-space: nowrap; }
+.attach-add-row { display: flex; gap: 8px; align-items: center; }
+
+/* ---- Log view ---- */
+#view-log {
+  display: none; flex: 1; overflow-y: auto; padding: 24px 28px;
+}
+.log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.log-table th {
+  text-align: left; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); color: var(--text2);
+  font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.log-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.log-table tr:last-child td { border-bottom: none; }
+.log-empty { font-size: 13px; color: var(--text2); padding: 24px 0; }
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     LOGIN MODAL
+     ================================================================ -->
+<div id="modal-login" style="display:none;">
+  <div id="login-card">
+    <h2>AutoEmail</h2>
+    <p>Set up your profile to get started.</p>
+    <label>Your name
+      <input type="text" id="login-name" placeholder="Your name" autocomplete="name">
+    </label>
+    <label>Your email
+      <input type="email" id="login-email" placeholder="you@gmail.com" autocomplete="email">
+    </label>
+    <div id="login-err">Please fill in both fields.</div>
+    <button class="btn btn-primary" onclick="saveProfile()">Continue</button>
+  </div>
+</div>
+
+<!-- ================================================================
+     HOME SCREEN
+     ================================================================ -->
+<div id="screen-home">
+  <div id="home-topbar">
+    <span id="home-logo">AutoEmail</span>
+    <div id="home-user-info">
+      <span id="home-user-name"></span>
+      <button class="btn btn-logout" onclick="logout()">Log out</button>
+    </div>
+  </div>
+  <div id="home-body">
+    <h2>Your Projects</h2>
+    <div id="project-grid"></div>
+  </div>
+</div>
+
+<!-- ================================================================
+     APP SCREEN
+     ================================================================ -->
+<div id="screen-app">
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <button class="btn" id="back-btn" onclick="goHome()">&#8592; Projects</button>
+    <span id="app-title">AutoEmail</span>
+    <span id="proj-name-label"></span>
+    <div id="topbar-sep"></div>
+
+    <div class="topbar-group">
+      <label for="geminiModel">Model</label>
+      <select class="topbar-input" id="geminiModel" style="width:auto;" onchange="localStorage.setItem('ae_gemini_model',this.value)"></select>
+    </div>
+
+    <div class="topbar-group">
+      <label for="apiKey">Gemini Key</label>
+      <input type="password" class="topbar-input" id="apiKey" placeholder="API key..." autocomplete="off" style="width:180px;">
+    </div>
+
+    <div class="topbar-group">
+      <label for="gmailClientId">Gmail Client ID</label>
+      <input type="text" class="topbar-input" id="gmailClientId" placeholder="OAuth Client ID..." autocomplete="off" style="width:190px;">
+      <button class="btn" id="gmailConnectBtn" onclick="connectGmail()">Connect</button>
+      <span id="gmail-status">&#10003; Connected</span>
+    </div>
+
+    <div class="topbar-group">
+      <button class="btn" id="uploadBtn">Upload Excel</button>
+      <input type="file" id="fileInput" accept=".xlsx" style="display:none">
+      <span id="upload-info"></span>
+    </div>
+
+    <button class="btn btn-primary" id="genAllBtn">Generate all</button>
+    <button class="btn btn-stop"    id="stopBtn" style="display:none">Stop</button>
+    <span id="progress-label"></span>
+    <span id="api-warning">Enter your Gemini API key.</span>
+  </div>
+
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <button class="tab-btn active" id="tab-emails"   onclick="switchTab('emails')">Emails</button>
+    <button class="tab-btn"        id="tab-settings" onclick="switchTab('settings')">Settings</button>
+    <button class="tab-btn"        id="tab-log"      onclick="switchTab('log')">Log</button>
+  </div>
+
+  <!-- Main area -->
+  <div id="main">
+    <!-- Emails view -->
+    <div id="view-emails">
+      <div id="sidebar"></div>
+      <div id="panel"></div>
+    </div>
+
+    <!-- Settings view -->
+    <div id="view-settings">
+      <div class="settings-header">
+        <h3>Settings</h3>
+        <div class="settings-save-row">
+          <span id="settings-dirty">&#11044; Unsaved changes</span>
+          <span id="settings-saved">&#10003; Saved</span>
+          <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+        </div>
+      </div>
+      <div class="settings-body" id="settings-body">
+        <!-- populated by renderSettings() -->
+      </div>
+    </div>
+
+    <!-- Log view -->
+    <div id="view-log">
+      <!-- populated by renderLog() -->
+    </div>
+  </div>
+
+</div><!-- #screen-app -->
+
+<script>
+// ============================================================
+//  Constants
+// ============================================================
+const GEMINI_MODELS = [
+  { id: 'gemini-2.5-flash',         label: 'Gemini 2.5 Flash (recommended)' },
+  { id: 'gemini-2.5-flash-lite',    label: 'Gemini 2.5 Flash Lite (fast)' },
+  { id: 'gemini-2.5-pro',           label: 'Gemini 2.5 Pro (best quality)' },
+  { id: 'gemini-3-flash-preview',   label: 'Gemini 3 Flash Preview' },
+];
+function geminiUrl() {
+  const model = localStorage.getItem('ae_gemini_model') || 'gemini-2.5-flash';
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=`;
+}
+
+const DEFAULT_COMPANIES = [
+  { id: 1,  name: 'SiteRecon',                  poc: 'Nishant Nikhil',          sector: 'AI / PropTech',              email: 'nishant@siterecon.ai',             linkedin: 'https://www.linkedin.com/company/siterecon/' },
+  { id: 2,  name: 'Shopflo',                     poc: 'Mohamad Shahrukh Shaikh', sector: 'E-commerce SaaS',            email: 'shahrukh@shopflo.com',             linkedin: '' },
+  { id: 3,  name: 'SkyBits Technologies',        poc: 'Debabrata Dutta',         sector: 'AI / NLP / Data Science',    email: 'debabrata.dutta@sky-bits.com',     linkedin: 'https://www.linkedin.com/company/skybits-technologies-pvt-ltd-/' },
+  { id: 4,  name: 'GenY Labs',                   poc: 'Giridhar Apparusu',       sector: 'AI Consumer Insights',       email: 'giridhar@genylabs.io',             linkedin: 'https://www.linkedin.com/company/geny-labs/' },
+  { id: 5,  name: 'Floworks',                    poc: 'Sudipta Biswas',          sector: 'AI Sales Automation (YC)',   email: 'sudipta@floworks.in',              linkedin: '' },
+  { id: 7,  name: 'iona.ai',                     poc: 'Abhijeet Chakravarty',    sector: 'HR Tech / AI Recruitment',   email: 'abhijeet@iona.ai',                 linkedin: 'https://www.linkedin.com/company/iona-ai/' },
+  { id: 8,  name: 'Memories',                    poc: 'Swarochish Chekuri',      sector: 'Creative Services',          email: 'schekuri@creativememories.com',    linkedin: '' },
+  { id: 9,  name: 'Orimon.ai',                   poc: 'Anurag Jain',             sector: 'Conversational AI',          email: 'jain@oriserve.com',                linkedin: 'https://www.linkedin.com/company/orimon/' },
+  { id: 13, name: 'Spur.fit',                    poc: 'Rahul Aluri',             sector: 'Fitness Tech / AI Coaching', email: 'rahul@spur.fit',                   linkedin: 'https://www.linkedin.com/company/spur-fit/' },
+  { id: 14, name: 'Daalchini Technologies',      poc: 'Vidya Bhushan',           sector: 'RetailTech / IoT Vending',   email: 'vidya.bhushan@daalchini.co.in',   linkedin: 'https://www.linkedin.com/company/11192958/' },
+  { id: 15, name: 'ZettaMine Labs',              poc: 'Surya Putchala',          sector: 'Big Data / AI Services',     email: 'suryarp@yahoo.com',                linkedin: 'https://www.linkedin.com/company/zettamine-technologies/' },
+  { id: 16, name: 'hikewise',                    poc: 'Muhammed Salih',          sector: 'AI/ML Education',            email: 'salihkoodathil@gmail.com',         linkedin: 'https://www.linkedin.com/company/hikewise-career-development/' },
+  { id: 17, name: 'Grandes Mentes Technologies', poc: 'Nishant Dean',            sector: 'AI/ML / IoT',                email: 'nishant.dean@grandes-mentes.com',  linkedin: 'https://www.linkedin.com/company/grandes-mentes-technologies-pvt-ltd/' },
+  { id: 18, name: 'alphaCtrl',                   poc: 'Gyanendra Tripathi',      sector: 'AI/ML',                      email: 'gt@alphactrl.com',                 linkedin: '' },
+  { id: 20, name: 'Mogi I/O',                    poc: 'Rahul Lahoria',           sector: 'AI/ML',                      email: 'rahul@mogiio.com',                 linkedin: 'https://www.linkedin.com/company/mogi-i-o/' },
+  { id: 21, name: 'ReWorld',                     poc: 'Prudhvi Dharmana',        sector: 'AI/ML / CleanTech',          email: 'prudhvi@reworld.eco',              linkedin: 'https://www.linkedin.com/company/reworldeco/' },
+  { id: 22, name: 'Rewa',                        poc: 'Ravi Kumar',              sector: 'AI/ML',                      email: 'ravi.kumar@pwc.in',                linkedin: '' },
+  { id: 23, name: 'Kombai',                      poc: 'Dipanjan Dey',            sector: 'AI/ML',                      email: 'dipanjan@kombai.io',               linkedin: 'https://www.linkedin.com/company/kombai/' },
+  { id: 24, name: 'Nayi Umeed Foundation',       poc: 'Arun Bharti',             sector: 'Social Impact / AI',         email: 'akbiitian@gmail.com',              linkedin: 'https://www.linkedin.com/company/nayi-umeed-foundation/' },
+  { id: 25, name: 'GoZoomo',                     poc: 'Arnav Kumar',             sector: 'Used Car Marketplace',       email: 'arnav.kumar@leapscholar.com',      linkedin: 'https://www.linkedin.com/company/zoomo-app/' },
+  { id: 30, name: 'Clipbots',                    poc: 'Shanuj Kumar',            sector: 'Sales CRM / Lead Mgmt',      email: 'shanuj@shakaguide.com',            linkedin: 'https://www.linkedin.com/company/clipbots/' },
+];
+
+const DEFAULT_TEMPLATE = {
+  body: `Hello {{FIRST_NAME}},
+
+I hope this email finds you well. I am reaching out to express my keen interest in the Product Management Intern role at {{COMPANY}}. As a pre-final year Dual Degree student at IIT Kharagpur with hands-on experience building user-facing products and a strong foundation in data-driven decision-making, I believe I can bring meaningful value to your team.
+
+Most recently, I led product development for ScanAid, a clinical decision support tool designed for non-specialist clinicians in Tier-2/3 India. Alongside this, I have worked on projects spanning recommendation systems, funnel analytics, and AI-driven chatbots, and have co-led events and partnerships worth Rs. 35L+ as Events Head of Spring Fest. These experiences have shaped how I approach problems: grounded in user context, backed by data, and focused on measurable outcomes.
+
+[TAILORED PARAGRAPH]
+
+Please find my resume attached for your consideration. I would love to learn more about {{COMPANY}}'s product roadmap and explore how I can contribute. Please let me know if there is a convenient time to connect.
+
+Looking forward to hearing from you.
+
+Best regards,
+Uttkarsh Kumar
+IIT Kharagpur | +91 7303549462`,
+  rules: `1. Write exactly 2 to 3 sentences. Maximum 3 lines total. Be crisp and specific.\n2. Reference the company's actual product or the core problem they solve. Use their domain language.\n3. Draw a genuine connection to Uttkarsh's background (recommendation systems, funnel analytics, AI-driven chatbots, transaction-heavy platforms, B2B2C models, PRD writing) only where it fits naturally. Do not force it.\n4. Do not use generic praise. Be concrete.\n5. Do not mention "healthcare" anywhere. Frame ScanAid only as translating operational gaps into structured product decisions.\n6. Do not say "AI-driven healthcare chatbots", say "AI-driven chatbots."\n7. Do not use em dashes anywhere in the email. Use commas or colons instead.\n8. Do not use contractions like "I'm" or "I've", write "I am" and "I have" throughout.`
+};
+
+const DEFAULT_EXCEL_DESC = `Column B: Company name\nColumn C: POC (contact person full name)\nColumn D: Sector / industry\nColumn E: Email address\nColumn F: LinkedIn URL\n\nRow 1 is the header row and is skipped.`;
+const DEFAULT_COLMAP = { name: 1, poc: 2, sector: 3, email: 4, linkedin: 5 };
+
+// ============================================================
+//  State
+// ============================================================
+let activeProjectId = null;
+let companies    = [];
+let emailState   = {};
+let selectedId   = null;
+let generatingAll   = false;
+let stopRequested   = false;
+let flashTimer      = null;
+let template        = {};
+let draftTemplate   = {};
+let excelDesc       = DEFAULT_EXCEL_DESC;
+let draftExcelDesc  = DEFAULT_EXCEL_DESC;
+let attachments     = [];   // [{ name, b64, mime, size }]
+let gmailToken      = null;
+let tokenClient     = null;
+let pendingGmail    = null;
+
+// ============================================================
+//  Namespace helper
+// ============================================================
+function ns(key) { return `ae_proj_${activeProjectId}_${key}`; }
+
+// ============================================================
+//  Boot
+// ============================================================
+(function init() {
+  // One-time migration from old keys
+  if (localStorage.getItem('email_api_key') && !localStorage.getItem('ae_apikey')) {
+    localStorage.setItem('ae_apikey', localStorage.getItem('email_api_key'));
+    localStorage.removeItem('email_api_key');
+  }
+  if (localStorage.getItem('gmail_client_id') && !localStorage.getItem('ae_gmailcid')) {
+    localStorage.setItem('ae_gmailcid', localStorage.getItem('gmail_client_id'));
+    localStorage.removeItem('gmail_client_id');
+  }
+
+  const user = getUser();
+  if (!user) {
+    showLogin();
+  } else {
+    showHome();
+  }
+})();
+
+// ============================================================
+//  Profile / Login
+// ============================================================
+function getUser() {
+  const s = localStorage.getItem('ae_user');
+  return s ? JSON.parse(s) : null;
+}
+
+function showLogin() {
+  document.getElementById('modal-login').style.display = 'flex';
+}
+
+function saveProfile() {
+  const name  = document.getElementById('login-name').value.trim();
+  const email = document.getElementById('login-email').value.trim();
+  const err   = document.getElementById('login-err');
+  if (!name || !email) { err.style.display = 'block'; return; }
+  err.style.display = 'none';
+  localStorage.setItem('ae_user', JSON.stringify({ name, email }));
+  document.getElementById('modal-login').style.display = 'none';
+  showHome();
+}
+
+function logout() {
+  if (!confirm('Log out? Your projects and data will remain saved.')) return;
+  localStorage.removeItem('ae_user');
+  location.reload();
+}
+
+// ============================================================
+//  Home screen
+// ============================================================
+function showHome() {
+  document.getElementById('screen-home').style.display = 'flex';
+  document.getElementById('screen-app').style.display  = 'none';
+  const user = getUser();
+  if (user) document.getElementById('home-user-name').textContent = 'Hi, ' + user.name.split(' ')[0];
+  renderHome();
+}
+
+function renderHome() {
+  const projects = getProjects();
+  const grid = document.getElementById('project-grid');
+  grid.innerHTML = '';
+
+  projects.forEach(p => {
+    const state   = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_state`)   || '{}');
+    const comps   = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_companies`) || '[]');
+    const total   = comps.length;
+    const done    = Object.values(state).filter(s => s.status === 'done').length;
+    const sent    = Object.values(state).filter(s => s.sent).length;
+    const log     = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_log`) || '[]');
+    const lastSent = log.length ? new Date(log[0].sentAt).toLocaleDateString() : null;
+
+    const card = document.createElement('div');
+    card.className = 'proj-card';
+    card.innerHTML =
+      `<div class="proj-card-name">${esc(p.name)}</div>
+       <div class="proj-card-meta">
+         <span>${total} companies &middot; ${done} generated &middot; ${sent} sent</span>
+         ${lastSent ? `<span>Last sent: ${lastSent}</span>` : ''}
+       </div>
+       <div class="proj-card-actions">
+         <button class="btn btn-primary" onclick="openProject('${p.id}')">Open</button>
+         <button class="btn" style="color:var(--danger);border-color:var(--danger);" onclick="deleteProject('${p.id}')">Delete</button>
+       </div>`;
+    grid.appendChild(card);
+  });
+
+  // New project card
+  const newCard = document.createElement('div');
+  newCard.className = 'new-proj-card';
+  newCard.id = 'new-proj-card';
+  newCard.innerHTML =
+    `<div class="plus">+</div>
+     <div class="label">New Project</div>`;
+  newCard.addEventListener('click', showNewProjectForm);
+  grid.appendChild(newCard);
+}
+
+function showNewProjectForm() {
+  const card = document.getElementById('new-proj-card');
+  card.innerHTML =
+    `<div id="new-proj-form">
+       <input type="text" id="new-proj-input" placeholder="Project name..." autofocus>
+       <button class="btn btn-primary" onclick="createProjectFromInput()">Create</button>
+       <button class="btn" onclick="renderHome()">Cancel</button>
+     </div>`;
+  card.style.cursor = 'default';
+  setTimeout(() => document.getElementById('new-proj-input')?.focus(), 0);
+  document.getElementById('new-proj-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') createProjectFromInput();
+  });
+}
+
+function createProjectFromInput() {
+  const input = document.getElementById('new-proj-input');
+  const name  = input ? input.value.trim() : '';
+  if (!name) return;
+  createProject(name);
+}
+
+function getProjects() {
+  return JSON.parse(localStorage.getItem('ae_projects') || '[]');
+}
+
+function saveProjects(arr) {
+  localStorage.setItem('ae_projects', JSON.stringify(arr));
+}
+
+function createProject(name) {
+  const id       = Date.now().toString(36);
+  const projects = getProjects();
+  projects.push({ id, name, createdAt: new Date().toISOString() });
+  saveProjects(projects);
+
+  // Initialise project namespace (no default companies — user uploads their own Excel)
+  localStorage.setItem(`ae_proj_${id}_companies`,   JSON.stringify([]));
+  localStorage.setItem(`ae_proj_${id}_state`,       JSON.stringify({}));
+  localStorage.setItem(`ae_proj_${id}_template`,    JSON.stringify(DEFAULT_TEMPLATE));
+  localStorage.setItem(`ae_proj_${id}_attachments`, JSON.stringify([]));
+  localStorage.setItem(`ae_proj_${id}_excel_desc`,  DEFAULT_EXCEL_DESC);
+
+  renderHome();
+}
+
+function deleteProject(id) {
+  if (!confirm('Delete this project and all its data? This cannot be undone.')) return;
+  const projects = getProjects().filter(p => p.id !== id);
+  saveProjects(projects);
+  // Remove all project keys
+  Object.keys(localStorage)
+    .filter(k => k.startsWith(`ae_proj_${id}_`))
+    .forEach(k => localStorage.removeItem(k));
+  renderHome();
+}
+
+function openProject(id) {
+  activeProjectId = id;
+  loadProjectData();
+  switchScreen('app');
+}
+
+function goHome() {
+  activeProjectId = null;
+  switchScreen('home');
+  renderHome();
+}
+
+function switchScreen(name) {
+  document.getElementById('screen-home').style.display = name === 'home' ? 'flex' : 'none';
+  document.getElementById('screen-app').style.display  = name === 'app'  ? 'flex' : 'none';
+}
+
+// ============================================================
+//  Load project data into working state
+// ============================================================
+function loadProjectData() {
+  const projects = getProjects();
+  const proj     = projects.find(p => p.id === activeProjectId);
+  document.getElementById('proj-name-label').textContent = proj ? proj.name : '';
+
+  const sc = localStorage.getItem(ns('companies'));
+  companies = sc ? JSON.parse(sc) : [];
+
+  const ss = localStorage.getItem(ns('state'));
+  emailState = ss ? JSON.parse(ss) : {};
+  companies.forEach(c => {
+    if (!emailState[c.id])
+      emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
+  });
+
+  const st = localStorage.getItem(ns('template'));
+  template = st ? JSON.parse(st) : { ...DEFAULT_TEMPLATE };
+  // Migrate old multi-field format → single body field
+  if (!template.body && (template.para1 || template.para2)) {
+    const p1  = template.para1   || '';
+    const p2  = template.para2   || '';
+    const cl  = template.closing || '';
+    const sig = template.signature || '';
+    template.body = `Hello {{FIRST_NAME}},\n\n${p1}\n\n${p2}\n\n[TAILORED PARAGRAPH]\n\n${cl}\n\n${sig}`;
+    delete template.para1; delete template.para2; delete template.closing; delete template.signature;
+    localStorage.setItem(ns('template'), JSON.stringify(template));
+  }
+  if (!template.body) template = { ...DEFAULT_TEMPLATE };
+  draftTemplate = { ...template };
+
+  const ed = localStorage.getItem(ns('excel_desc'));
+  excelDesc = ed || DEFAULT_EXCEL_DESC;
+  draftExcelDesc = excelDesc;
+
+  const att = localStorage.getItem(ns('attachments'));
+  attachments = att ? JSON.parse(att) : [];
+
+  // API key & Gmail
+  // Model selector
+  const savedModel = localStorage.getItem('ae_gemini_model') || 'gemini-2.5-flash';
+  const sel = document.getElementById('geminiModel');
+  sel.innerHTML = GEMINI_MODELS.map(m =>
+    `<option value="${m.id}"${m.id === savedModel ? ' selected' : ''}>${m.label}</option>`
+  ).join('');
+
+  document.getElementById('apiKey').value = localStorage.getItem('ae_apikey') || '';
+  document.getElementById('apiKey').oninput = e => {
+    localStorage.setItem('ae_apikey', e.target.value.trim());
+    hideWarning();
+  };
+
+  document.getElementById('gmailClientId').value = localStorage.getItem('ae_gmailcid') || '';
+  document.getElementById('gmailClientId').oninput = e => {
+    localStorage.setItem('ae_gmailcid', e.target.value.trim());
+    resetGmailState();
+  };
+
+  const savedCid = localStorage.getItem('ae_gmailcid') || '';
+  if (savedCid) waitForGIS(() => initGmailClient(savedCid));
+
+  document.getElementById('uploadBtn').onclick = () => document.getElementById('fileInput').click();
+  document.getElementById('fileInput').onchange = handleUpload;
+  document.getElementById('genAllBtn').onclick  = generateAll;
+  document.getElementById('stopBtn').onclick    = () => {
+    stopRequested = true;
+    document.getElementById('stopBtn').style.display = 'none';
+  };
+
+  selectedId = companies.length ? companies[0].id : null;
+  switchTab('emails');
+  renderSidebar();
+  if (selectedId) selectCompany(selectedId);
+  refreshProgress();
+}
+
+// ============================================================
+//  Persistence
+// ============================================================
+function saveState()       { localStorage.setItem(ns('state'),       JSON.stringify(emailState)); }
+function saveCompanies()   { localStorage.setItem(ns('companies'),   JSON.stringify(companies));  }
+function saveTemplate()    { localStorage.setItem(ns('template'),    JSON.stringify(template));   }
+function saveAttachments() { localStorage.setItem(ns('attachments'), JSON.stringify(attachments)); }
+function saveExcelDesc()   { localStorage.setItem(ns('excel_desc'),  excelDesc); }
+
+// ============================================================
+//  Sidebar
+// ============================================================
+function renderSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '';
+  companies.forEach(c => {
+    const st  = emailState[c.id] || { status: 'pending' };
+    const btn = document.createElement('button');
+    btn.className = 'company-btn' + (c.id === selectedId ? ' active' : '');
+    btn.dataset.id = c.id;
+    btn.innerHTML =
+      `<div class="cbtn-text">
+        <div class="cbtn-name">${esc(c.name)}</div>
+        <div class="cbtn-sector">${esc(c.sector)}</div>
+      </div>
+      <div class="dot ${dotClass(st.status)}"></div>`;
+    btn.addEventListener('click', () => selectCompany(c.id));
+    sb.appendChild(btn);
+  });
+}
+
+function updateSidebarDot(id) {
+  const btn = document.querySelector(`.company-btn[data-id="${id}"]`);
+  if (!btn) return;
+  const st = emailState[id] || { status: 'pending' };
+  btn.querySelector('.dot').className = `dot ${dotClass(st.status)}`;
+}
+
+function dotClass(status) {
+  return status === 'loading' ? 'loading' :
+         status === 'done'    ? 'done'    :
+         status === 'error'   ? 'error'   : '';
+}
+
+// ============================================================
+//  Panel
+// ============================================================
+function selectCompany(id) {
+  selectedId = id;
+  document.querySelectorAll('.company-btn').forEach(b =>
+    b.classList.toggle('active', Number(b.dataset.id) === id));
+  renderPanel();
+}
+
+function renderPanel() {
+  const panel = document.getElementById('panel');
+  if (!selectedId) { panel.innerHTML = '<p class="muted">Select a company from the sidebar.</p>'; return; }
+  const c  = companies.find(x => x.id === selectedId);
+  const st = emailState[selectedId] || { status: 'pending' };
+  if (!c) return;
+  const toLine = `<div class="p-to">To: <strong>${esc(c.poc)}</strong> &lt;${esc(c.email)}&gt;</div>`;
+
+  switch (st.status) {
+    case 'pending':
+      panel.innerHTML =
+        toLine +
+        `<p class="muted">No email generated yet.</p>
+         <button class="btn btn-primary" onclick="triggerGenerate(${c.id})">Generate email</button>`;
+      break;
+    case 'loading':
+      panel.innerHTML = `<div class="loading-msg">Researching ${esc(c.name)} and writing email...</div>`;
+      break;
+    case 'error':
+      panel.innerHTML =
+        toLine +
+        `<div class="err-title">Generation failed.</div>
+         <div class="err-box">${esc(st.error)}</div>
+         <button class="btn btn-primary" onclick="triggerGenerate(${c.id})">Retry</button>`;
+      break;
+    case 'done':
+      panel.innerHTML =
+        toLine +
+        `<div class="p-subject-label">Subject</div>
+         <div class="p-subject-box p-subject-editable"
+              contenteditable="true"
+              id="edit-subject-${c.id}"
+              oninput="saveEdits(${c.id})">${esc(st.subject)}</div>
+
+         <div class="fmt-toolbar">
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('bold')" title="Bold"><b>B</b></button>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('italic')" title="Italic"><i>I</i></button>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('underline')" title="Underline"><u>U</u></button>
+           <div class="fmt-sep"></div>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('removeFormat')" title="Clear formatting" style="font-size:11px;">Tx</button>
+         </div>
+         <div class="p-body-editor"
+              contenteditable="true"
+              id="edit-body-${c.id}"
+              oninput="saveEdits(${c.id})">${bodyToHtml(st.body)}</div>
+
+         <div class="copy-row">
+           <button class="btn" onclick="copyBody()">Copy body</button>
+           <button class="btn" onclick="copySubject()">Copy subject</button>
+           <button class="btn" onclick="copyAll()">Copy all</button>
+           <button class="btn" onclick="triggerRegenerate(${c.id})">Regenerate</button>
+         </div>
+         <div class="send-row">
+           <button class="btn btn-primary" onclick="triggerGmail(${c.id}, 'send')">Send now</button>
+           <button class="btn" onclick="triggerGmail(${c.id}, 'draft')">Schedule in Gmail</button>
+           ${st.sent ? `<span style="font-size:12px;color:var(--success);align-self:center;">&#10003; Sent</span>` : ''}
+         </div>
+         <div id="flash"></div>`;
+      break;
+  }
+}
+
+// ============================================================
+//  Tab switching (within app)
+// ============================================================
+function switchTab(name) {
+  const tabs = { emails: 'view-emails', settings: 'view-settings', log: 'view-log' };
+  Object.entries(tabs).forEach(([t, viewId]) => {
+    document.getElementById(viewId).style.display = t === name ? (t === 'emails' ? 'flex' : 'flex') : 'none';
+    const btn = document.getElementById('tab-' + t);
+    if (btn) btn.classList.toggle('active', t === name);
+  });
+  if (name === 'settings') renderSettings();
+  if (name === 'log')      renderLog();
+}
+
+// ============================================================
+//  Settings
+// ============================================================
+function renderSettings() {
+  draftTemplate  = { ...template };
+  draftExcelDesc = excelDesc;
+  markClean();
+
+  const fields = [
+    { key: 'body',  label: 'Email template', hint: 'Use {{COMPANY}} and {{FIRST_NAME}} as placeholders. Write [TAILORED PARAGRAPH] where Gemini should insert the company-specific paragraph. Formatting (bold, italic) is preserved in sent emails.', minHeight: '320px' },
+    { key: 'rules', label: 'Generation rules', hint: 'One rule per line. Gemini follows these when writing the [TAILORED PARAGRAPH].', minHeight: '160px' },
+  ];
+
+  // Build attachment list HTML
+  const attachListHtml = attachments.length
+    ? attachments.map((a, i) =>
+        `<div class="attach-item">
+           <span class="attach-item-name" title="${esc(a.name)}">${esc(a.name)}</span>
+           <span class="attach-item-size">${formatBytes(a.size)}</span>
+           <button class="btn" style="color:var(--danger);border-color:var(--danger);padding:3px 8px;font-size:11px;" onclick="removeAttachment(${i})">Remove</button>
+         </div>`).join('')
+    : `<div style="font-size:12px;color:var(--text3);">No attachments — emails will be sent without files.</div>`;
+
+  document.getElementById('settings-body').innerHTML =
+    fields.map(f => richEditorSection(f)).join('') +
+
+    `<hr class="tmpl-divider">
+
+     <div class="tmpl-section">
+       <div class="tmpl-label">Attachments</div>
+       <div class="tmpl-hint">Files attached to every email sent or drafted via Gmail. Add your CV, portfolio, or any other files.</div>
+       <div class="attach-list" id="attach-list">${attachListHtml}</div>
+       <div class="attach-add-row">
+         <button class="btn" onclick="document.getElementById('attachInput').click()">+ Add file</button>
+         <input type="file" id="attachInput" multiple style="display:none" onchange="handleAttachUpload(event)">
+       </div>
+     </div>
+
+     <hr class="tmpl-divider">
+
+     <div class="tmpl-section">
+       <div class="tmpl-label">Excel sheet format</div>
+       <div class="tmpl-hint">Describe the structure of your Excel file so the app knows how to read it. This is used as context when parsing uploads.</div>
+       <textarea class="tmpl-textarea" id="excel-desc-input" rows="6"
+         oninput="draftExcelDesc=this.value;markDirty()">${esc(draftExcelDesc)}</textarea>
+     </div>
+
+     <hr class="tmpl-divider">
+
+     <div class="tmpl-section">
+       <button class="btn-link" onclick="resetSettingsToDefaults()">Reset all fields to defaults</button>
+     </div>`;
+
+  // Attach toolbar event listeners after render
+  fields.forEach(f => initEditorToolbar(f.key));
+}
+
+function toEditorHtml(val) {
+  if (!val) return '';
+  if (/<[a-z]/i.test(val)) return val;       // already HTML
+  return esc(val).replace(/\n/g, '<br>');    // plain text → HTML
+}
+
+function richEditorSection(f) {
+  const html = toEditorHtml(draftTemplate[f.key] || '');
+  return `<div class="tmpl-section">
+    <div class="tmpl-label">${f.label}</div>
+    <div class="tmpl-hint">${f.hint}</div>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-fmt-toolbar" id="toolbar-${f.key}">
+        <button class="tmpl-fmt-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button class="tmpl-fmt-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button class="tmpl-fmt-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+        <div class="tmpl-fmt-sep"></div>
+        <button class="tmpl-fmt-btn" data-cmd="removeFormat" title="Clear formatting" style="font-size:10px;">Tx</button>
+      </div>
+      <div class="tmpl-editor" id="editor-${f.key}"
+           contenteditable="true"
+           style="min-height:${f.minHeight || '80px'}"
+           oninput="onEditorInput('${f.key}')">${html}</div>
+    </div>
+  </div>`;
+}
+
+function initEditorToolbar(key) {
+  const toolbar = document.getElementById('toolbar-' + key);
+  const editor  = document.getElementById('editor-'  + key);
+  if (!toolbar || !editor) return;
+
+  toolbar.querySelectorAll('.tmpl-fmt-btn').forEach(btn => {
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      editor.focus();
+      document.execCommand(btn.dataset.cmd, false, null);
+      updateToolbarState(key);
+      onEditorInput(key);
+    });
+  });
+
+  editor.addEventListener('keyup',    () => updateToolbarState(key));
+  editor.addEventListener('mouseup',  () => updateToolbarState(key));
+  editor.addEventListener('focus',    () => updateToolbarState(key));
+}
+
+function updateToolbarState(key) {
+  const toolbar = document.getElementById('toolbar-' + key);
+  if (!toolbar) return;
+  ['bold','italic','underline'].forEach(cmd => {
+    const btn = toolbar.querySelector(`[data-cmd="${cmd}"]`);
+    if (btn) btn.classList.toggle('active', document.queryCommandState(cmd));
+  });
+}
+
+function onEditorInput(key) {
+  draftTemplate[key] = document.getElementById('editor-' + key).innerHTML;
+  markDirty();
+}
+
+function markDirty() {
+  document.getElementById('settings-dirty').style.display = 'inline';
+  document.getElementById('settings-saved').style.display = 'none';
+}
+function markClean() {
+  document.getElementById('settings-dirty').style.display = 'none';
+  document.getElementById('settings-saved').style.display = 'none';
+}
+function showSavedFlash() {
+  document.getElementById('settings-dirty').style.display = 'none';
+  const s = document.getElementById('settings-saved');
+  s.style.display = 'inline';
+  setTimeout(() => { s.style.display = 'none'; }, 2500);
+}
+
+function saveSettings() {
+  template   = { ...draftTemplate };
+  excelDesc  = draftExcelDesc;
+  saveTemplate();
+  saveExcelDesc();
+  showSavedFlash();
+}
+
+function resetSettingsToDefaults() {
+  if (!confirm('Reset all template fields and Excel description to defaults?')) return;
+  draftTemplate  = { ...DEFAULT_TEMPLATE };
+  draftExcelDesc = DEFAULT_EXCEL_DESC;
+  markDirty();
+  renderSettings();
+}
+
+// ============================================================
+//  Attachments
+// ============================================================
+function handleAttachUpload(e) {
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  let pending = files.length;
+  if (!pending) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const bytes = new Uint8Array(ev.target.result);
+      let binary = '';
+      bytes.forEach(b => binary += String.fromCharCode(b));
+      const b64 = btoa(binary);
+      attachments.push({ name: file.name, b64, mime: file.type || 'application/octet-stream', size: file.size });
+      if (--pending === 0) {
+        saveAttachments();
+        // Re-render just the attach list
+        const list = document.getElementById('attach-list');
+        if (list) {
+          list.innerHTML = attachments.map((a, i) =>
+            `<div class="attach-item">
+               <span class="attach-item-name" title="${esc(a.name)}">${esc(a.name)}</span>
+               <span class="attach-item-size">${formatBytes(a.size)}</span>
+               <button class="btn" style="color:var(--danger);border-color:var(--danger);padding:3px 8px;font-size:11px;" onclick="removeAttachment(${i})">Remove</button>
+             </div>`).join('');
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function removeAttachment(i) {
+  attachments.splice(i, 1);
+  saveAttachments();
+  // Re-render attach list in place
+  const list = document.getElementById('attach-list');
+  if (list) {
+    if (attachments.length) {
+      list.innerHTML = attachments.map((a, idx) =>
+        `<div class="attach-item">
+           <span class="attach-item-name" title="${esc(a.name)}">${esc(a.name)}</span>
+           <span class="attach-item-size">${formatBytes(a.size)}</span>
+           <button class="btn" style="color:var(--danger);border-color:var(--danger);padding:3px 8px;font-size:11px;" onclick="removeAttachment(${idx})">Remove</button>
+         </div>`).join('');
+    } else {
+      list.innerHTML = `<div style="font-size:12px;color:var(--text3);">No attachments — emails will be sent without files.</div>`;
+    }
+  }
+}
+
+function formatBytes(b) {
+  if (b < 1024)       return b + ' B';
+  if (b < 1048576)    return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+// ============================================================
+//  Log view
+// ============================================================
+function renderLog() {
+  const log  = JSON.parse(localStorage.getItem(ns('log')) || '[]');
+  const view = document.getElementById('view-log');
+  if (!log.length) {
+    view.innerHTML = '<p class="log-empty">No emails sent yet from this project.</p>';
+    return;
+  }
+  const rows = log.map(e =>
+    `<tr>
+       <td>${esc(e.company)}</td>
+       <td>${esc(e.pocName)}</td>
+       <td>${esc(e.email)}</td>
+       <td>${new Date(e.sentAt).toLocaleString()}</td>
+     </tr>`
+  ).join('');
+  view.innerHTML =
+    `<table class="log-table">
+       <thead><tr><th>Company</th><th>POC</th><th>Email</th><th>Sent at</th></tr></thead>
+       <tbody>${rows}</tbody>
+     </table>`;
+}
+
+// ============================================================
+//  Copy
+// ============================================================
+function flash(msg) {
+  const el = document.getElementById('flash');
+  if (!el) return;
+  el.innerHTML = msg;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { if (el) el.innerHTML = ''; }, 2500);
+}
+
+function getBodyText()    { const el = document.getElementById('edit-body-'    + selectedId); return el ? el.innerText : (emailState[selectedId]?.body    || ''); }
+function getSubjectText() { const el = document.getElementById('edit-subject-' + selectedId); return el ? el.innerText.trim() : (emailState[selectedId]?.subject || ''); }
+function copyBody()    { copy(getBodyText()); }
+function copySubject() { copy(getSubjectText()); }
+function copyAll() {
+  const c = companies.find(x => x.id === selectedId);
+  if (!c) return;
+  copy(`To: ${c.email}\nSubject: ${getSubjectText()}\n\n${getBodyText()}`);
+}
+function copy(text) { navigator.clipboard.writeText(text).then(() => flash('Copied!')); }
+
+// ============================================================
+//  Progress
+// ============================================================
+function refreshProgress() {
+  const done  = companies.filter(c => emailState[c.id]?.status === 'done').length;
+  const total = companies.length;
+  const el    = document.getElementById('progress-label');
+  el.textContent = (done > 0 || generatingAll) ? `${done} / ${total} done` : '';
+}
+
+// ============================================================
+//  API warning
+// ============================================================
+function showWarning() { document.getElementById('api-warning').style.display = 'inline'; }
+function hideWarning() { document.getElementById('api-warning').style.display = 'none';   }
+function apiKey()      { return document.getElementById('apiKey').value.trim(); }
+
+// ============================================================
+//  Prompt / template helpers
+// ============================================================
+function sub(str, c, fn) {
+  return str
+    .replace(/\{\{COMPANY\}\}/g,    c.name)
+    .replace(/\{\{FIRST_NAME\}\}/g, fn);
+}
+
+// Strip HTML tags to plain text for Gemini prompt; convert <br>/<p> to newlines
+function htmlToText(html) {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ')
+    .trim();
+}
+
+// Sub placeholders in an HTML string (don't escape the replacement)
+function subHtml(html, c, fn) {
+  return html
+    .replace(/\{\{COMPANY\}\}/g,    esc(c.name))
+    .replace(/\{\{FIRST_NAME\}\}/g, esc(fn));
+}
+
+function buildPrompt(c) {
+  const fn   = c.poc.trim().split(' ')[0];
+  const li   = c.linkedin || 'use your general knowledge of the company';
+  const body = sub(htmlToText(template.body || ''), c, fn);
+
+  return `You are a professional email writer. Fill in the [TAILORED PARAGRAPH] in the email template below. Output only the completed email — no preamble, no commentary, no thinking steps.
+
+The [TAILORED PARAGRAPH] should be 2-3 sentences specific to ${c.name} (${c.sector}). POC: ${fn}. LinkedIn: ${li}.
+
+RULES FOR THE TAILORED PARAGRAPH:
+${htmlToText(template.rules || '')}
+
+EMAIL TEMPLATE (reproduce exactly, replacing only [TAILORED PARAGRAPH]):
+${body}
+
+OUTPUT FORMAT — start immediately with SUBJECT: on line 1:
+
+SUBJECT: Application for Product Management Intern at ${c.name} | IIT Kharagpur
+
+BODY:
+${body.split('\n').slice(0, 1).join('')}
+
+[full email with tailored paragraph filled in]`;
+}
+
+// ============================================================
+//  Gemini call
+// ============================================================
+async function callGemini(c) {
+  const resp = await fetch(geminiUrl() + encodeURIComponent(apiKey()), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: 'You are a precise email writer. Output only what is asked. Never include reasoning, thinking steps, or commentary. Start your response immediately with SUBJECT: on the first line.' }] },
+      contents: [{ role: 'user', parts: [{ text: buildPrompt(c) }] }],
+      generationConfig: { temperature: 0.7, maxOutputTokens: 8192 }
+    })
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error?.message || `HTTP ${resp.status}`);
+
+  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!raw) throw new Error('Empty response from Gemini.');
+
+  const subjectMatch = raw.match(/^SUBJECT:\s*(.+)$/m);
+  let bodyMatch      = raw.match(/^BODY:\s*\n([\s\S]+)/m);
+
+  if (subjectMatch && !bodyMatch) {
+    const afterSubject = raw.slice(raw.indexOf(subjectMatch[0]) + subjectMatch[0].length).trim();
+    if (afterSubject) bodyMatch = [null, afterSubject];
+  }
+
+  if (!subjectMatch || !bodyMatch)
+    throw new Error(`Could not find SUBJECT/BODY markers in response:\n${raw.slice(0, 400)}`);
+
+  const plainBody = bodyMatch[1].trim();
+
+  // Try to extract just the tailored paragraph so we can inject template HTML formatting
+  const tailored = extractTailoredParagraph(c, plainBody);
+
+  return { subject: subjectMatch[1].trim(), body: plainBody, tailored };
+}
+
+// Extract just the tailored paragraph from Gemini's output
+// by finding what replaced [TAILORED PARAGRAPH] in the template
+function extractTailoredParagraph(c, plainBody) {
+  const fn       = c.poc.trim().split(' ')[0];
+  const tmplText = sub(htmlToText(template.body || ''), c, fn);
+  const parts    = tmplText.split('[TAILORED PARAGRAPH]');
+  if (parts.length < 2) return null;
+
+  const before = parts[0].trim().slice(-60);  // last 60 chars before placeholder
+  const after  = parts[1].trim().slice(0, 60); // first 60 chars after placeholder
+
+  const beforeIdx = before ? plainBody.lastIndexOf(before.slice(0, 40)) : -1;
+  if (beforeIdx === -1) return null;
+  const startIdx = beforeIdx + before.length;
+
+  const afterIdx = after ? plainBody.indexOf(after.slice(0, 40), startIdx) : plainBody.length;
+  if (afterIdx === -1) return null;
+
+  return plainBody.slice(startIdx, afterIdx).trim();
+}
+
+// Build HTML body — inject tailored paragraph into template HTML
+function buildHtmlBody(c, tailored) {
+  const fn       = c.poc.trim().split(' ')[0];
+  const bodyHtml = subHtml(toEditorHtml(template.body || ''), c, fn);
+  const tailHtml = tailored ? esc(tailored).replace(/\n/g, '<br>') : '';
+  return bodyHtml.replace(/\[TAILORED PARAGRAPH\]/g, tailHtml);
+}
+
+// ============================================================
+//  Generate
+// ============================================================
+async function generateOne(id) {
+  const c = companies.find(x => x.id === id);
+  if (!c) return;
+  setState(id, { status: 'loading', subject: '', body: '', error: '', sent: false });
+  try {
+    const result  = await callGemini(c);
+    // Build formatted HTML body using template HTML + extracted tailored paragraph
+    const htmlBody = result.tailored
+      ? buildHtmlBody(c, result.tailored)
+      : result.body;   // fallback: plain text if extraction failed
+    setState(id, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
+  } catch (err) {
+    setState(id, { status: 'error', subject: '', body: '', error: String(err), sent: false });
+  }
+  refreshProgress();
+}
+
+function setState(id, s) {
+  emailState[id] = s;
+  saveState();
+  updateSidebarDot(id);
+  if (selectedId === id) renderPanel();
+}
+
+function triggerGenerate(id) {
+  if (!apiKey()) { showWarning(); return; }
+  hideWarning(); generateOne(id);
+}
+
+async function triggerRegenerate(id) {
+  if (!apiKey()) { showWarning(); return; }
+  hideWarning();
+  setState(id, { status: 'pending', subject: '', body: '', error: '', sent: false });
+  await generateOne(id);
+}
+
+async function generateAll() {
+  if (!apiKey()) { showWarning(); return; }
+  hideWarning();
+  if (generatingAll) return;
+  generatingAll = true; stopRequested = false;
+  document.getElementById('genAllBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  refreshProgress();
+  const queue = companies.filter(c => emailState[c.id]?.status !== 'done');
+  for (let i = 0; i < queue.length; i++) {
+    if (stopRequested) break;
+    await generateOne(queue[i].id);
+    if (!stopRequested && i < queue.length - 1) await sleep(1000);
+  }
+  generatingAll = false; stopRequested = false;
+  document.getElementById('genAllBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+  refreshProgress();
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============================================================
+//  Rich text editor
+// ============================================================
+function bodyToHtml(text) {
+  if (/<[a-z]/i.test(text)) return text;
+  return esc(text).replace(/\n/g, '<br>');
+}
+function applyFmt(cmd) { document.execCommand(cmd, false, null); }
+function saveEdits(id) {
+  const st = emailState[id];
+  if (!st || st.status !== 'done') return;
+  const subjectEl = document.getElementById('edit-subject-' + id);
+  const bodyEl    = document.getElementById('edit-body-'    + id);
+  if (!subjectEl || !bodyEl) return;
+  emailState[id] = { ...st, subject: subjectEl.innerText.trim(), body: bodyEl.innerHTML };
+  saveState();
+}
+
+// ============================================================
+//  Gmail OAuth
+// ============================================================
+function waitForGIS(cb) {
+  if (window.google?.accounts?.oauth2) { cb(); return; }
+  let tries = 0;
+  const t = setInterval(() => {
+    if (window.google?.accounts?.oauth2) { clearInterval(t); cb(); return; }
+    if (++tries > 100) { clearInterval(t); flash('Gmail library failed to load.'); }
+  }, 100);
+}
+
+function initGmailClient(clientId) {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose',
+    callback: onGmailToken
+  });
+}
+
+function onGmailToken(resp) {
+  if (resp.error) {
+    gmailToken = null; showGmailStatus(false);
+    flash('Gmail auth failed: ' + resp.error); pendingGmail = null; return;
+  }
+  gmailToken = resp.access_token;
+  showGmailStatus(true);
+  if (pendingGmail) {
+    const { id, action } = pendingGmail; pendingGmail = null;
+    action === 'send' ? executeDirectSend(id) : executeCreateDraft(id);
+  }
+}
+
+function connectGmail() {
+  const cid = document.getElementById('gmailClientId').value.trim();
+  if (!cid) { flash('Paste your OAuth Client ID first.'); return; }
+  localStorage.setItem('ae_gmailcid', cid);
+  waitForGIS(() => { initGmailClient(cid); tokenClient.requestAccessToken({ prompt: 'consent' }); });
+}
+
+function triggerGmail(id, action) {
+  saveEdits(id);
+  const cid = document.getElementById('gmailClientId').value.trim();
+  if (!cid) { flash('Paste your Gmail Client ID in the top bar and click Connect.'); return; }
+  if (!tokenClient) waitForGIS(() => initGmailClient(cid));
+  if (!gmailToken) { pendingGmail = { id, action }; tokenClient.requestAccessToken(); return; }
+  action === 'send' ? executeDirectSend(id) : executeCreateDraft(id);
+}
+
+function showGmailStatus(ok) {
+  document.getElementById('gmail-status').style.display = ok ? 'inline' : 'none';
+  document.getElementById('gmailConnectBtn').textContent = ok ? 'Reconnect' : 'Connect';
+}
+function resetGmailState() {
+  gmailToken = tokenClient = pendingGmail = null; showGmailStatus(false);
+}
+
+// ============================================================
+//  Email construction
+// ============================================================
+function buildRawEmail(to, subject, htmlBody) {
+  if (!attachments.length) {
+    return ['To: '+to,'Subject: '+subject,'MIME-Version: 1.0',
+            'Content-Type: text/html; charset=utf-8','',htmlBody].join('\r\n');
+  }
+  const boundary = 'bound_' + Date.now();
+  const parts = [
+    'To: '+to, 'Subject: '+subject, 'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`, '',
+    '--'+boundary, 'Content-Type: text/html; charset=utf-8', '', htmlBody,
+  ];
+  attachments.forEach(a => {
+    parts.push(
+      '--'+boundary,
+      `Content-Type: ${a.mime}; name="${a.name}"`,
+      `Content-Disposition: attachment; filename="${a.name}"`,
+      'Content-Transfer-Encoding: base64', '',
+      a.b64
+    );
+  });
+  parts.push('--'+boundary+'--');
+  return parts.join('\r\n');
+}
+
+function toBase64Url(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function getHtmlBody(id) {
+  const el = document.getElementById('edit-body-' + id);
+  return el ? el.innerHTML : bodyToHtml(emailState[id]?.body || '');
+}
+
+async function executeDirectSend(id) {
+  const c = companies.find(x => x.id === id);
+  const st = emailState[id];
+  if (!c || !st) return;
+  flash('Sending...');
+  try {
+    const raw  = buildRawEmail(c.email, st.subject, getHtmlBody(id));
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: toBase64Url(raw) })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
+      throw new Error(err?.error?.message || 'HTTP ' + resp.status);
+    }
+    emailState[id] = { ...st, sent: true };
+    saveState();
+    // Write to log
+    const log = JSON.parse(localStorage.getItem(ns('log')) || '[]');
+    log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt: new Date().toISOString() });
+    localStorage.setItem(ns('log'), JSON.stringify(log));
+    if (selectedId === id) renderPanel();
+    flash('&#10003; Sent to ' + esc(c.poc) + '!');
+  } catch (err) { flash('Send failed: ' + err.message); }
+}
+
+async function executeCreateDraft(id) {
+  const c = companies.find(x => x.id === id);
+  const st = emailState[id];
+  if (!c || !st) return;
+  flash('Creating draft...');
+  try {
+    const raw  = buildRawEmail(c.email, st.subject, getHtmlBody(id));
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: { raw: toBase64Url(raw) } })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
+      throw new Error(err?.error?.message || 'HTTP ' + resp.status);
+    }
+    flash('Draft created — opening Gmail...');
+    setTimeout(() => window.open('https://mail.google.com/mail/#drafts', '_blank'), 600);
+  } catch (err) { flash('Draft failed: ' + err.message); }
+}
+
+// ============================================================
+//  Excel upload
+// ============================================================
+async function handleUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  const info = document.getElementById('upload-info');
+  try {
+    const parsed = await parseExcel(file);
+    if (!parsed.length) {
+      info.textContent = 'No valid rows found. Check column mapping in Settings.';
+      info.className = 'err'; return;
+    }
+    companies = parsed; emailState = {};
+    companies.forEach(c => {
+      emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
+    });
+    saveCompanies(); saveState();
+    info.textContent = `${file.name} — ${parsed.length} companies`;
+    info.className = '';
+    selectedId = companies[0].id;
+    renderSidebar(); renderPanel(); refreshProgress();
+  } catch (err) { info.textContent = `Error: ${err.message}`; info.className = 'err'; }
+}
+
+async function parseExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.onload = e => {
+      try {
+        const data     = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet    = workbook.Sheets[workbook.SheetNames[0]];
+        const rows     = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const INVALID  = ['n.a.', 'n/a', '-', 'na', ''];
+        const cm       = DEFAULT_COLMAP;
+        const result   = [];
+        for (let i = 1; i < rows.length; i++) {
+          const row     = rows[i];
+          const name    = String(row[cm.name]     || '').trim();
+          const poc     = String(row[cm.poc]      || '').trim();
+          const sector  = String(row[cm.sector]   || '').trim();
+          const email   = String(row[cm.email]    || '').trim();
+          const linkedin= String(row[cm.linkedin] || '').trim();
+          if (!name) continue;
+          if (INVALID.includes(email.toLowerCase())) continue;
+          result.push({ id: i, name, poc, sector, email, linkedin: linkedin.startsWith('http') ? linkedin : '' });
+        }
+        resolve(result);
+      } catch (err) { reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ============================================================
+//  Utility
+// ============================================================
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
