@@ -1236,10 +1236,15 @@ function renderSheetSelector() {
   }
   if (!sheets.length) { el.innerHTML = ''; return; }
   el.innerHTML = sheets.map(s =>
-    `<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);padding:2px 0;cursor:pointer;">
-       <input type="checkbox" ${activeSheetIds.includes(s.id)?'checked':''} onchange="toggleSheet('${s.id}',this.checked)">
-       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.name)}">${esc(s.name)}</span>
-     </label>`
+    `<div style="display:flex;align-items:center;gap:4px;padding:2px 0;">
+       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);cursor:pointer;flex:1;min-width:0;">
+         <input type="checkbox" ${activeSheetIds.includes(s.id)?'checked':''} onchange="toggleSheet('${s.id}',this.checked)">
+         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.name)}">${esc(s.name)}</span>
+       </label>
+       <button onclick="removeSheet('${s.id}')" title="Remove sheet"
+         style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;line-height:1;padding:0 2px;flex-shrink:0;"
+         onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text3)'">✕</button>
+     </div>`
   ).join('');
 }
 
@@ -1249,6 +1254,23 @@ function toggleSheet(sheetId, checked) {
   recomputeActiveCompanies();
   selectedId = companies[0]?.id || null;
   renderSidebar(); if (selectedId) renderPanel(); refreshProgress();
+}
+
+function removeSheet(sheetId) {
+  const s = sheets.find(x => x.id === sheetId);
+  if (!s) return;
+  if (!confirm(`Remove sheet "${s.name}"? The companies and their emails will be deleted from this project.`)) return;
+  // Clean up emailState for companies in this sheet
+  s.companies.forEach(c => { delete emailState[String(c.id)]; });
+  sheets = sheets.filter(x => x.id !== sheetId);
+  activeSheetIds = activeSheetIds.filter(id => id !== sheetId);
+  delete sheetColmaps[sheetId];
+  recomputeActiveCompanies();
+  selectedId = companies[0]?.id || null;
+  saveSheets(); saveState(); saveSheetColmaps();
+  DB.delete('settings', ns('sheetraw_' + sheetId)).catch(console.error);
+  renderSheetSelector();
+  renderSidebar(); if (selectedId) renderPanel(); else renderPanel(); refreshProgress();
 }
 
 // ============================================================
