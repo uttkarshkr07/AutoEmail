@@ -68,7 +68,7 @@ body {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
+  z-index: 1050;
 }
 #login-card {
   background: var(--bg2);
@@ -371,7 +371,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
+  z-index: 1100;
 }
 #tutorial-card {
   background: var(--bg2);
@@ -735,7 +735,13 @@ const DEFAULT_COMPANIES = [
 
 const DEFAULT_TEMPLATE = {
   body:  '',
-  rules: ''
+  useGemini: true,
+  rules: `- Keep the tailored paragraph to 2-3 sentences
+- Reference the company's specific product, recent news, or LinkedIn activity
+- Do not use em-dashes (—) or contractions
+- Avoid generic phrases like "I would be a great fit" or "I am passionate about"
+- Do not use healthcare or medical terminology for non-healthcare companies
+- Maintain a professional but direct tone — no excessive flattery`
 };
 
 const DEFAULT_EXCEL_DESC = `Column B: Company name\nColumn C: POC (contact person full name)\nColumn D: Sector / industry\nColumn E: Email address\nColumn F: LinkedIn URL\n\nRow 1 is the header row and is skipped.`;
@@ -758,6 +764,7 @@ let draftTemplate   = {};
 let excelDesc       = DEFAULT_EXCEL_DESC;
 let draftExcelDesc  = DEFAULT_EXCEL_DESC;
 let attachments     = [];   // [{ name, b64, mime, size }]
+let sheetColmaps    = {};   // { [sheetId]: { name, poc, sector, email, linkedin } } — 0-indexed col numbers
 let followupTemplates = []; // [{ name, body, rules, useGemini }]
 let gmailToken      = null;
 let tokenClient     = null;
@@ -865,7 +872,12 @@ async function boot() {
     await DB.open();
     await migrateFromLocalStorage();
     const user = await getUser();
-    if (!user) showLogin(); else showHome();
+    // Re-prompt if old profile (no email field stored, from pre-v2 format)
+    if (!user || (!user.email && !user.name)) {
+      showLogin();
+    } else {
+      showHome();
+    }
   } catch (err) {
     document.body.innerHTML = `<div style="padding:40px;color:#e05555;font-family:system-ui">
       <b>AutoEmail failed to start:</b> ${String(err)}<br><br>
@@ -933,22 +945,26 @@ async function renderHome() {
     const sent     = Object.values(state).filter(s => s.sent).length;
     const lastSent = log.length ? new Date(log[0].sentAt).toLocaleDateString('en-GB') : null;
 
-    // Theme accent for card border
+    // Theme colors for card
     const themeId  = await DB.get('settings', `ae_proj_${p.id}_theme`) || 'midnight';
-    const accent   = (BUILT_IN_THEMES[themeId] || BUILT_IN_THEMES.midnight).colors['--accent'];
+    const tc       = (BUILT_IN_THEMES[themeId] || BUILT_IN_THEMES.midnight).colors;
 
     const card = document.createElement('div');
     card.className = 'proj-card';
-    card.style.borderLeft = `4px solid ${accent}`;
+    card.style.cssText = `background:${tc['--bg2']};border-color:${tc['--border']};`;
+    card.querySelector = undefined; // dummy — will be set below
+    // Apply theme colors inline
+    card.style.background   = tc['--bg2'];
+    card.style.borderColor  = tc['--border'];
     card.innerHTML =
-      `<div class="proj-card-name">${esc(p.name)}</div>
-       <div class="proj-card-meta">
+      `<div class="proj-card-name" style="color:${tc['--text']}">${esc(p.name)}</div>
+       <div class="proj-card-meta" style="color:${tc['--text2']}">
          <span>${total} companies &middot; ${done} generated &middot; ${sent} sent</span>
          ${lastSent ? `<span>Last sent: ${lastSent}</span>` : ''}
        </div>
        <div class="proj-card-actions">
-         <button class="btn btn-primary" onclick="openProject('${p.id}')">Open</button>
-         <button class="btn" style="color:var(--danger);border-color:var(--danger);" onclick="deleteProject('${p.id}')">Delete</button>
+         <button class="btn btn-primary" style="background:${tc['--accent']};border-color:${tc['--accent']};color:#fff;" onclick="openProject('${p.id}')">Open</button>
+         <button class="btn" style="color:${tc['--danger']};border-color:${tc['--danger']};background:${tc['--bg3']};" onclick="deleteProject('${p.id}')">Delete</button>
        </div>`;
     grid.appendChild(card);
   }
@@ -1011,8 +1027,9 @@ async function createProjectFromModal() {
   await DB.put('templates', `ae_proj_${id}_template`,    JSON.stringify(DEFAULT_TEMPLATE));
   await DB.put('attachments',`ae_proj_${id}_attachments`,JSON.stringify([]));
   await DB.put('settings',  `ae_proj_${id}_excel_desc`,  DEFAULT_EXCEL_DESC);
-  if (apiKey)   await DB.put('settings', `ae_proj_${id}_apikey`,   apiKey);
-  if (gmailCid) await DB.put('settings', `ae_proj_${id}_gmailcid`, gmailCid);
+  // Always store per-project key (empty string = explicitly not set, no global fallback)
+  await DB.put('settings', `ae_proj_${id}_apikey`,   apiKey);
+  await DB.put('settings', `ae_proj_${id}_gmailcid`, gmailCid);
 
   closeNewProjectModal();
   renderHome();
@@ -1046,6 +1063,11 @@ async function openProject(id) {
 }
 
 function goHome() {
+  const dirtyEl = document.getElementById('settings-dirty');
+  if (dirtyEl && dirtyEl.style.display !== 'none') {
+    if (!confirm('You have unsaved changes in Settings. Leave without saving?')) return;
+    markClean();
+  }
   activeProjectId = null;
   applyTheme('midnight');
   switchScreen('home');
@@ -1114,9 +1136,16 @@ async function loadProjectData() {
   const att = await DB.get('attachments', ns('attachments'));
   attachments = att ? JSON.parse(att) : [];
 
-  // Load per-project API key (fall back to global)
-  const projApiKey  = await DB.get('settings', ns('apikey'))  || await DB.get('settings', 'ae_apikey')  || '';
-  const projGmailCid= await DB.get('settings', ns('gmailcid'))|| await DB.get('settings', 'ae_gmailcid')|| '';
+  const scRaw = await DB.get('settings', ns('sheet_colmaps'));
+  sheetColmaps = scRaw ? JSON.parse(scRaw) : {};
+
+  // Load per-project API key — only fall back to global for projects created before per-project keys existed
+  // (projects created via new modal always have explicit per-project key, even if empty string)
+  const projApiKeyRaw   = await DB.get('settings', ns('apikey'));
+  const projGmailCidRaw = await DB.get('settings', ns('gmailcid'));
+  // If key was explicitly set (even empty string stored as ''), use it; if never set (null), fall back to global for legacy projects
+  const projApiKey   = projApiKeyRaw   !== null ? projApiKeyRaw   : (await DB.get('settings', 'ae_apikey')  || '');
+  const projGmailCid = projGmailCidRaw !== null ? projGmailCidRaw : (await DB.get('settings', 'ae_gmailcid') || '');
 
   // Model selector
   const savedModel = await DB.get('settings', 'ae_gemini_model') || 'gemini-2.5-flash';
@@ -1173,6 +1202,7 @@ function saveTemplate()    { DB.put('templates',  ns('template'),    JSON.string
 function saveAttachments() { DB.put('attachments',ns('attachments'), JSON.stringify(attachments)).catch(console.error); }
 function saveExcelDesc()   { DB.put('settings',   ns('excel_desc'),  excelDesc).catch(console.error); }
 function saveSheets()      { DB.put('sheets', ns('sheets'), JSON.stringify(sheets)).catch(console.error); }
+function saveSheetColmaps(){ DB.put('settings', ns('sheet_colmaps'), JSON.stringify(sheetColmaps)).catch(console.error); }
 function saveFollowupTemplates() { DB.put('followupTemplates', ns('followup_templates'), JSON.stringify(followupTemplates)).catch(console.error); }
 
 function recomputeActiveCompanies() {
@@ -1182,19 +1212,27 @@ function recomputeActiveCompanies() {
 }
 
 function renderSheetSelector() {
+  // Ensure the sidebar is wrapped (only inject wrapper once; sidebar may already be in wrapper)
   let el = document.getElementById('sheet-selector');
   if (!el) {
-    // Inject above sidebar
     const emailsView = document.getElementById('view-emails');
-    const sidebar = document.getElementById('sidebar');
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;flex-direction:column;width:250px;flex-shrink:0;';
-    el = document.createElement('div');
-    el.id = 'sheet-selector';
-    el.style.cssText = 'background:var(--bg2);border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px 8px;flex-shrink:0;';
-    emailsView.insertBefore(wrap, sidebar);
-    wrap.appendChild(el);
-    wrap.appendChild(sidebar);
+    const sidebar    = document.getElementById('sidebar');
+    // Check if sidebar is already inside a wrapper
+    if (sidebar.parentElement !== emailsView) {
+      // Already wrapped from a previous call — just re-query
+      el = sidebar.parentElement.querySelector('#sheet-selector');
+    }
+    if (!el) {
+      const wrap = document.createElement('div');
+      wrap.id = 'sidebar-wrap';
+      wrap.style.cssText = 'display:flex;flex-direction:column;width:250px;flex-shrink:0;overflow:hidden;';
+      el = document.createElement('div');
+      el.id = 'sheet-selector';
+      el.style.cssText = 'background:var(--bg2);border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px 8px;flex-shrink:0;';
+      emailsView.insertBefore(wrap, sidebar);
+      wrap.appendChild(el);
+      wrap.appendChild(sidebar);
+    }
   }
   if (!sheets.length) { el.innerHTML = ''; return; }
   el.innerHTML = sheets.map(s =>
@@ -1244,7 +1282,15 @@ function selectCompany(id) {
 
 function renderPanel() {
   const panel = document.getElementById('panel');
-  if (!selectedId) { panel.innerHTML = '<p class="muted">Select a company from the sidebar.</p>'; return; }
+  if (!companies.length) {
+    panel.innerHTML = `<div style="padding:48px 28px;text-align:center;">
+      <div style="font-size:32px;margin-bottom:12px;">📂</div>
+      <p style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">No companies yet</p>
+      <p style="font-size:13px;color:var(--text2);">Upload an Excel sheet using the <strong>+ Add Sheet</strong> button above to get started.</p>
+    </div>`;
+    return;
+  }
+  if (!selectedId) { panel.innerHTML = '<p class="muted" style="padding:24px;">Select a company from the sidebar.</p>'; return; }
   const c  = companies.find(x => String(x.id) === String(selectedId));
   const st = emailState[String(selectedId)] || { status: 'pending' };
   if (!c) return;
@@ -1347,6 +1393,14 @@ function renderPanel() {
 //  Tab switching (within app)
 // ============================================================
 function switchTab(name) {
+  // Warn if leaving settings with unsaved changes
+  if (name !== 'settings') {
+    const dirtyEl = document.getElementById('settings-dirty');
+    if (dirtyEl && dirtyEl.style.display !== 'none') {
+      if (!confirm('You have unsaved changes in Settings. Leave without saving?')) return;
+      markClean();
+    }
+  }
   const tabs = { emails: 'view-emails', settings: 'view-settings', log: 'view-log' };
   Object.entries(tabs).forEach(([t, viewId]) => {
     document.getElementById(viewId).style.display = t === name ? (t === 'emails' ? 'flex' : 'flex') : 'none';
@@ -1369,6 +1423,7 @@ function renderSettings() {
     { key: 'body',  label: 'Email template', hint: 'Use {{COMPANY}} and {{FIRST_NAME}} as placeholders. Write [TAILORED PARAGRAPH] where Gemini should insert the company-specific paragraph. Formatting (bold, italic) is preserved in sent emails.', minHeight: '320px' },
     { key: 'rules', label: 'Generation rules', hint: 'One rule per line. Gemini follows these when writing the [TAILORED PARAGRAPH].', minHeight: '160px' },
   ];
+  const useGeminiChecked = draftTemplate.useGemini !== false;
 
   // Build attachment list HTML
   const attachListHtml = attachments.length
@@ -1383,7 +1438,16 @@ function renderSettings() {
   document.getElementById('settings-body').innerHTML =
     fields.map(f => richEditorSection(f)).join('') +
 
-    `<hr class="tmpl-divider">
+    `<div class="tmpl-section" style="padding-top:0;margin-top:-8px;">
+       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2);">
+         <input type="checkbox" id="use-gemini-toggle" ${useGeminiChecked?'checked':''}
+           onchange="draftTemplate.useGemini=this.checked;markDirty()">
+         Use Gemini AI to generate emails
+       </label>
+       <div class="tmpl-hint" style="margin-top:4px;">When enabled, Gemini fills in the [TAILORED PARAGRAPH] based on the rules above. When disabled, the template is sent as-is with placeholder substitution only.</div>
+     </div>
+
+     <hr class="tmpl-divider">
 
      <div class="tmpl-section">
        <div class="tmpl-label">Attachments</div>
@@ -1405,6 +1469,14 @@ function renderSettings() {
      </div>
 
      <hr class="tmpl-divider">
+
+     ${sheets.length ? `<div class="tmpl-section">
+       <div class="tmpl-label">Excel column mapping</div>
+       <div class="tmpl-hint">Map each required field to a column index (0 = column A, 1 = B, 2 = C…). After changing, click Save then re-upload the sheet to apply.</div>
+       <div id="colmap-list">${renderColmapSectionsHtml()}</div>
+     </div>
+
+     <hr class="tmpl-divider">` : ''}
 
      <div class="tmpl-section" id="followup-templates-section">
        <div class="tmpl-label">Follow-up Templates</div>
@@ -1542,9 +1614,39 @@ function showSavedFlash() {
 function saveSettings() {
   template   = { ...draftTemplate };
   excelDesc  = draftExcelDesc;
+  // Save colmaps from inputs
+  sheets.forEach(s => {
+    const cm = {};
+    ['name','poc','sector','email','linkedin'].forEach(field => {
+      const el = document.getElementById(`colmap-${s.id}-${field}`);
+      if (el) cm[field] = parseInt(el.value, 10) || 0;
+    });
+    if (Object.keys(cm).length) sheetColmaps[s.id] = cm;
+  });
   saveTemplate();
   saveExcelDesc();
+  saveSheetColmaps();
   showSavedFlash();
+}
+
+function renderColmapSectionsHtml() {
+  if (!sheets.length) return '';
+  const fields = ['name','poc','sector','email','linkedin'];
+  const labels = { name:'Company name', poc:'POC', sector:'Sector', email:'Email', linkedin:'LinkedIn' };
+  return sheets.map(s => {
+    const cm = sheetColmaps[s.id] || { ...DEFAULT_COLMAP };
+    const inputs = fields.map(f =>
+      `<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);">${labels[f]}
+         <input id="colmap-${s.id}-${f}" class="np-input" type="number" min="0" style="width:70px;font-size:12px;padding:4px 8px;"
+           value="${cm[f] ?? DEFAULT_COLMAP[f]}" oninput="markDirty()">
+       </label>`
+    ).join('');
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;">📄 ${esc(s.name)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;">${inputs}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;">After changing, click Save then re-upload this sheet to apply the new mapping.</div>
+    </div>`;
+  }).join('');
 }
 
 function resetSettingsToDefaults() {
@@ -1826,11 +1928,20 @@ async function generateOne(id) {
   if (!c) return;
   setState(sid, { status: 'loading', subject: '', body: '', error: '', sent: false });
   try {
-    const result  = await callGemini(c);
-    const htmlBody = result.tailored
-      ? buildHtmlBody(c, result.tailored)
-      : result.body;
-    setState(sid, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
+    if (template.useGemini === false) {
+      // Plain substitution — no Gemini call
+      const fn      = c.poc.trim().split(' ')[0];
+      const htmlBody = subHtml(toEditorHtml(template.body || ''), c, fn)
+        .replace(/\[TAILORED PARAGRAPH\]/g, '');
+      const subject  = sub(template.subject || `Internship Application — {{COMPANY}}`, c, fn);
+      setState(sid, { status: 'done', subject, body: htmlBody, error: '', sent: false });
+    } else {
+      const result  = await callGemini(c);
+      const htmlBody = result.tailored
+        ? buildHtmlBody(c, result.tailored)
+        : result.body;
+      setState(sid, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
+    }
   } catch (err) {
     setState(sid, { status: 'error', subject: '', body: '', error: String(err), sent: false });
   }
@@ -2063,13 +2174,18 @@ async function handleUpload(e) {
   const info = document.getElementById('upload-info');
   try {
     const sheetId = 'sheet_' + Date.now().toString(36);
+    const cm = sheetColmaps[sheetId] || { ...DEFAULT_COLMAP };
+    // Store raw Excel bytes for re-parsing on colmap change
+    const rawB64 = await fileToBase64(file);
+    await DB.put('settings', ns('sheetraw_' + sheetId), rawB64);
     // Prefix company IDs with sheetId to avoid collision
-    const rawParsed = await parseExcel(file);
+    const rawParsed = await parseExcelData(rawB64, cm);
     const parsed = rawParsed.map(c => ({ ...c, id: sheetId + '_' + c.id }));
     if (!parsed.length) {
       info.textContent = 'No valid rows found. Check column mapping in Settings.';
       info.className = 'err'; return;
     }
+    sheetColmaps[sheetId] = cm;
     sheets.push({ id: sheetId, name: file.name, companies: parsed });
     activeSheetIds = sheets.map(s => s.id);
     recomputeActiveCompanies();
@@ -2078,7 +2194,7 @@ async function handleUpload(e) {
       if (!emailState[c.id])
         emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
     });
-    saveSheets(); saveState();
+    saveSheets(); saveState(); saveSheetColmaps();
     info.textContent = `${sheets.length} sheet${sheets.length>1?'s':''} — ${companies.length} companies`;
     info.className = '';
     renderSheetSelector();
@@ -2087,35 +2203,50 @@ async function handleUpload(e) {
   } catch (err) { info.textContent = `Error: ${err.message}`; info.className = 'err'; }
 }
 
-async function parseExcel(file) {
+function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.onload = e => {
-      try {
-        const data     = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet    = workbook.Sheets[workbook.SheetNames[0]];
-        const rows     = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        const INVALID  = ['n.a.', 'n/a', '-', 'na', ''];
-        const cm       = DEFAULT_COLMAP;
-        const result   = [];
-        for (let i = 1; i < rows.length; i++) {
-          const row     = rows[i];
-          const name    = String(row[cm.name]     || '').trim();
-          const poc     = String(row[cm.poc]      || '').trim();
-          const sector  = String(row[cm.sector]   || '').trim();
-          const email   = String(row[cm.email]    || '').trim();
-          const linkedin= String(row[cm.linkedin] || '').trim();
-          if (!name) continue;
-          if (INVALID.includes(email.toLowerCase())) continue;
-          result.push({ id: i, name, poc, sector, email, linkedin: linkedin.startsWith('http') ? linkedin : '' });
-        }
-        resolve(result);
-      } catch (err) { reject(err); }
+      const bytes = new Uint8Array(e.target.result);
+      let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
+      resolve(btoa(bin));
     };
     reader.readAsArrayBuffer(file);
   });
+}
+
+function parseExcelData(b64, cm) {
+  cm = cm || DEFAULT_COLMAP;
+  return new Promise((resolve, reject) => {
+    try {
+      const bin      = atob(b64);
+      const data     = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet    = workbook.Sheets[workbook.SheetNames[0]];
+      const rows     = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const INVALID  = ['n.a.', 'n/a', '-', 'na', ''];
+      const result   = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row     = rows[i];
+        const name    = String(row[cm.name]     || '').trim();
+        const poc     = String(row[cm.poc]      || '').trim();
+        const sector  = String(row[cm.sector]   || '').trim();
+        const email   = String(row[cm.email]    || '').trim();
+        const linkedin= String(row[cm.linkedin] || '').trim();
+        if (!name) continue;
+        if (INVALID.includes(email.toLowerCase())) continue;
+        result.push({ id: i, name, poc, sector, email, linkedin: linkedin.startsWith('http') ? linkedin : '' });
+      }
+      resolve(result);
+    } catch (err) { reject(err); }
+  });
+}
+
+async function parseExcel(file, cm) {
+  const b64 = await fileToBase64(file);
+  return parseExcelData(b64, cm || DEFAULT_COLMAP);
 }
 
 // ============================================================
@@ -2411,6 +2542,10 @@ function renderSidebarWithSearch() {
          placeholder="Search companies..." value="${esc(sidebarSearch)}"
          oninput="sidebarSearch=this.value.toLowerCase();renderSidebarWithSearch()" />
      </div>`;
+  if (!companies.length) {
+    sb.innerHTML += `<div style="padding:20px 14px;font-size:12px;color:var(--text3);text-align:center;">Upload a sheet to<br>see companies here.</div>`;
+    return;
+  }
   filtered.forEach(c => {
     const st  = emailState[c.id] || { status: 'pending' };
     const btn = document.createElement('button');
@@ -2458,6 +2593,8 @@ function showContextMenu(x, y, c) {
   menu.style.cssText = `position:fixed;left:${Math.min(x, window.innerWidth-300)}px;top:${Math.min(y, window.innerHeight-300)}px;
     width:280px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;
     padding:12px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:8px;`;
+  const sid = String(c.id);
+  const threadId = emailState[sid]?.gmailThreadId || '';
   menu.innerHTML = `
     <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Edit Company</div>
     ${ctxField('ctx-cname','Company name',c.name)}
@@ -2465,6 +2602,7 @@ function showContextMenu(x, y, c) {
     ${ctxField('ctx-cemail','Email',c.email)}
     ${ctxField('ctx-csector','Sector',c.sector)}
     ${ctxField('ctx-clinkedin','LinkedIn',c.linkedin)}
+    ${ctxField('ctx-cthreadid','Gmail thread ID',threadId)}
     <button class="btn btn-primary" style="margin-top:4px;" onclick="saveContextEdit()">Save</button>`;
   document.body.appendChild(menu);
 }
@@ -2483,9 +2621,15 @@ function saveContextEdit() {
   c.email    = document.getElementById('ctx-cemail')?.value.trim()   || c.email;
   c.sector   = document.getElementById('ctx-csector')?.value.trim()  || c.sector;
   c.linkedin = document.getElementById('ctx-clinkedin')?.value.trim()|| c.linkedin;
+  const sid  = String(c.id);
+  const threadId = document.getElementById('ctx-cthreadid')?.value.trim() || '';
+  if (threadId || emailState[sid]?.gmailThreadId) {
+    emailState[sid] = { ...(emailState[sid] || { status:'pending', subject:'', body:'', error:'', sent:false }), gmailThreadId: threadId };
+    saveState();
+  }
   saveCompanies();
   renderSidebarWithSearch();
-  if (selectedId === c.id) renderPanel();
+  if (String(selectedId) === sid) renderPanel();
   hideContextMenu();
 }
 
