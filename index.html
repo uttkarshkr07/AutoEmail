@@ -426,6 +426,75 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 }
 .tut-note strong { color: var(--text); }
 
+/* ---- New Project Modal ---- */
+#modal-new-project {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1001;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform:scale(0.97); } to { opacity:1; transform:scale(1); } }
+#new-proj-modal-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px; width: 420px; max-width: 96vw;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#new-proj-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px 14px; border-bottom: 1px solid var(--border);
+}
+#new-proj-modal-header h3 { font-size: 15px; font-weight: 600; }
+#new-proj-modal-body { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+#new-proj-modal-footer { padding: 14px 22px 18px; display: flex; gap: 10px; border-top: 1px solid var(--border); }
+.np-label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text2); }
+.np-opt   { font-weight: 400; color: var(--text3); }
+.np-input { font-size: 13px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg3); color: var(--text); outline: none; }
+.np-input:focus { border-color: var(--accent); }
+.np-file-row { display: flex; align-items: center; gap: 10px; }
+
+/* ---- Theme picker ---- */
+#theme-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: none; justify-content: center;
+  padding: 6px 0; background: var(--bg2);
+  border-top: 1px solid var(--border); z-index: 100;
+}
+#theme-bar-link {
+  font-size: 11px; color: var(--text3); cursor: pointer; user-select: none;
+  padding: 3px 8px; border-radius: 4px;
+}
+#theme-bar-link:hover { color: var(--text2); background: var(--bg3); }
+#theme-picker-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: none; align-items: flex-end; justify-content: center;
+  z-index: 200; backdrop-filter: blur(4px);
+}
+#theme-picker-panel {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0; width: 100%; max-width: 760px;
+  padding: 20px 24px 28px; max-height: 80vh; overflow-y: auto;
+}
+#theme-picker-panel h4 { font-size: 13px; font-weight: 600; margin-bottom: 14px; color: var(--text2); }
+.theme-swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.theme-swatch {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  cursor: pointer; border-radius: 6px; padding: 5px;
+  transition: background 0.1s;
+}
+.theme-swatch:hover { background: var(--bg3); }
+.theme-swatch.active { outline: 2px solid var(--accent); border-radius: 8px; }
+.swatch-rect {
+  width: 64px; height: 40px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+}
+.swatch-dot { width: 10px; height: 10px; border-radius: 50%; }
+.swatch-name { font-size: 10px; color: var(--text2); white-space: nowrap; }
+.theme-add-btn { margin-top: 14px; }
+
 /* ---- Log view ---- */
 #view-log {
   display: none; flex: 1; overflow-y: auto; padding: 24px 28px;
@@ -481,6 +550,40 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 </div>
 
 <!-- ================================================================
+     NEW PROJECT MODAL
+     ================================================================ -->
+<div id="modal-new-project" style="display:none;">
+  <div id="new-proj-modal-card">
+    <div id="new-proj-modal-header">
+      <h3>New Project</h3>
+      <button class="btn btn-link" onclick="openTutorial()" title="Setup guide" style="font-size:14px;">&#63;</button>
+    </div>
+    <div id="new-proj-modal-body">
+      <label class="np-label">Project name
+        <input type="text" id="np-name" class="np-input" placeholder="My Outreach Campaign">
+      </label>
+      <label class="np-label">Gemini API key <span class="np-opt">(optional — can set later)</span>
+        <input type="password" id="np-apikey" class="np-input" placeholder="Paste your Gemini API key...">
+      </label>
+      <label class="np-label">Gmail Client ID <span class="np-opt">(optional — can connect later)</span>
+        <input type="text" id="np-gmailcid" class="np-input" placeholder="Paste your OAuth Client ID...">
+      </label>
+      <label class="np-label">Import Excel sheet <span class="np-opt">(optional)</span>
+        <div class="np-file-row">
+          <button class="btn" onclick="document.getElementById('np-excel-input').click()">Upload .xlsx</button>
+          <input type="file" id="np-excel-input" accept=".xlsx" style="display:none" onchange="npHandleExcel(event)">
+          <span id="np-excel-status" style="font-size:12px;color:var(--text2);"></span>
+        </div>
+      </label>
+    </div>
+    <div id="new-proj-modal-footer">
+      <button class="btn btn-primary" onclick="createProjectFromModal()">Create Project</button>
+      <button class="btn-link btn" onclick="closeNewProjectModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
      HOME SCREEN
      ================================================================ -->
 <div id="screen-home">
@@ -511,7 +614,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 
     <div class="topbar-group">
       <label for="geminiModel">Model</label>
-      <select class="topbar-input" id="geminiModel" style="width:auto;" onchange="localStorage.setItem('ae_gemini_model',this.value)"></select>
+      <select class="topbar-input" id="geminiModel" style="width:auto;" onchange="DB.put('settings','ae_gemini_model',this.value).catch(console.error)"></select>
     </div>
 
     <div class="topbar-group">
@@ -533,6 +636,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     </div>
 
     <button class="btn btn-primary" id="genAllBtn">Generate all</button>
+    <button class="btn"             id="sendAllBtn" onclick="sendAll()">Send all</button>
     <button class="btn btn-stop"    id="stopBtn" style="display:none">Stop</button>
     <span id="progress-label"></span>
     <span id="api-warning">Enter your Gemini API key.</span>
@@ -577,6 +681,19 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 
 </div><!-- #screen-app -->
 
+<!-- Theme bar (shown inside app) -->
+<div id="theme-bar">
+  <span id="theme-bar-link" onclick="toggleThemePicker()">Theme: Midnight</span>
+</div>
+
+<!-- Theme picker overlay -->
+<div id="theme-picker-overlay" onclick="if(event.target===this)this.style.display='none'">
+  <div id="theme-picker-panel">
+    <h4>Choose a theme</h4>
+    <div class="theme-swatches" id="theme-swatches-container"></div>
+  </div>
+</div>
+
 <script>
 // ============================================================
 //  Constants
@@ -587,8 +704,8 @@ const GEMINI_MODELS = [
   { id: 'gemini-2.5-pro',           label: 'Gemini 2.5 Pro (best quality)' },
   { id: 'gemini-3-flash-preview',   label: 'Gemini 3 Flash Preview' },
 ];
-function geminiUrl() {
-  const model = localStorage.getItem('ae_gemini_model') || 'gemini-2.5-flash';
+async function geminiUrl() {
+  const model = await DB.get('settings', 'ae_gemini_model') || 'gemini-2.5-flash';
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=`;
 }
 
@@ -649,10 +766,77 @@ let pendingGmail    = null;
 function ns(key) { return `ae_proj_${activeProjectId}_${key}`; }
 
 // ============================================================
-//  Boot
+//  IndexedDB abstraction
 // ============================================================
-(function init() {
-  // One-time migration from old keys
+const DB_NAME = 'autoemail', DB_VERSION = 1;
+let _db = null;
+
+const DB = {
+  open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        ['users','projects','sheets','emailState','templates','followupTemplates',
+         'attachments','logs','settings','customThemes'].forEach(s => {
+          if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
+        });
+      };
+      req.onsuccess = e => { _db = e.target.result; resolve(); };
+      req.onerror   = e => reject(e.target.error);
+    });
+  },
+  _tx(store, mode) { return _db.transaction(store, mode).objectStore(store); },
+  get(store, key) {
+    return new Promise((res, rej) => {
+      const r = this._tx(store, 'readonly').get(key);
+      r.onsuccess = () => res(r.result ?? null);
+      r.onerror   = e => rej(e.target.error);
+    });
+  },
+  put(store, key, value) {
+    return new Promise((res, rej) => {
+      const r = this._tx(store, 'readwrite').put(value, key);
+      r.onsuccess = () => res();
+      r.onerror   = e => rej(e.target.error);
+    });
+  },
+  delete(store, key) {
+    return new Promise((res, rej) => {
+      const r = this._tx(store, 'readwrite').delete(key);
+      r.onsuccess = () => res();
+      r.onerror   = e => rej(e.target.error);
+    });
+  },
+  getAllByPrefix(store, prefix) {
+    return new Promise((res, rej) => {
+      const results = [];
+      const r = this._tx(store, 'readonly').openCursor();
+      r.onsuccess = e => {
+        const c = e.target.result;
+        if (c) { if (String(c.key).startsWith(prefix)) results.push({ key: c.key, value: c.value }); c.continue(); }
+        else res(results);
+      };
+      r.onerror = e => rej(e.target.error);
+    });
+  }
+};
+
+function idbStoreForKey(key) {
+  if (key === 'ae_user')     return 'users';
+  if (key === 'ae_projects') return 'projects';
+  if (key.endsWith('_state'))       return 'emailState';
+  if (key.endsWith('_companies'))   return 'sheets';
+  if (key.endsWith('_template'))    return 'templates';
+  if (key.endsWith('_attachments')) return 'attachments';
+  if (key.endsWith('_log'))         return 'logs';
+  return 'settings';
+}
+
+async function migrateFromLocalStorage() {
+  const done = await DB.get('settings', 'ae_migration_done');
+  if (done) return;
+  // Old key renames
   if (localStorage.getItem('email_api_key') && !localStorage.getItem('ae_apikey')) {
     localStorage.setItem('ae_apikey', localStorage.getItem('email_api_key'));
     localStorage.removeItem('email_api_key');
@@ -661,21 +845,40 @@ function ns(key) { return `ae_proj_${activeProjectId}_${key}`; }
     localStorage.setItem('ae_gmailcid', localStorage.getItem('gmail_client_id'));
     localStorage.removeItem('gmail_client_id');
   }
-
-  const user = getUser();
-  if (!user) {
-    showLogin();
-  } else {
-    showHome();
+  for (const k of Object.keys(localStorage)) {
+    if (!k.startsWith('ae_')) continue;
+    const store = idbStoreForKey(k);
+    const val = localStorage.getItem(k);
+    if (val !== null) await DB.put(store, k, val);
   }
-})();
+  await DB.put('settings', 'ae_migration_done', true);
+}
+
+// ============================================================
+//  Boot
+// ============================================================
+async function boot() {
+  try {
+    await DB.open();
+    await migrateFromLocalStorage();
+    const user = await getUser();
+    if (!user) showLogin(); else showHome();
+  } catch (err) {
+    document.body.innerHTML = `<div style="padding:40px;color:#e05555;font-family:system-ui">
+      <b>AutoEmail failed to start:</b> ${String(err)}<br><br>
+      <button onclick="location.reload()" style="padding:8px 16px;cursor:pointer">Reload</button>
+    </div>`;
+  }
+}
+boot();
 
 // ============================================================
 //  Profile / Login
 // ============================================================
-function getUser() {
-  const s = localStorage.getItem('ae_user');
-  return s ? JSON.parse(s) : null;
+async function getUser() {
+  const s = await DB.get('users', 'ae_user');
+  if (!s) return null;
+  try { return JSON.parse(s); } catch { return null; }
 }
 
 function showLogin() {
@@ -688,44 +891,52 @@ function saveProfile() {
   const err   = document.getElementById('login-err');
   if (!name || !email) { err.style.display = 'block'; return; }
   err.style.display = 'none';
-  localStorage.setItem('ae_user', JSON.stringify({ name, email }));
-  document.getElementById('modal-login').style.display = 'none';
-  showHome();
+  DB.put('users', 'ae_user', JSON.stringify({ name, email })).then(() => {
+    document.getElementById('modal-login').style.display = 'none';
+    showHome();
+  });
 }
 
 function logout() {
   if (!confirm('Log out? Your projects and data will remain saved.')) return;
-  localStorage.removeItem('ae_user');
-  location.reload();
+  DB.delete('users', 'ae_user').then(() => location.reload());
 }
 
 // ============================================================
 //  Home screen
 // ============================================================
-function showHome() {
+async function showHome() {
   document.getElementById('screen-home').style.display = 'flex';
   document.getElementById('screen-app').style.display  = 'none';
-  const user = getUser();
+  const user = await getUser();
   if (user) document.getElementById('home-user-name').textContent = 'Hi, ' + user.name.split(' ')[0];
   renderHome();
 }
 
-function renderHome() {
-  const projects = getProjects();
+async function renderHome() {
+  const projects = await getProjects();
   const grid = document.getElementById('project-grid');
   grid.innerHTML = '';
 
-  projects.forEach(p => {
-    const state   = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_state`)   || '{}');
-    const comps   = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_companies`) || '[]');
-    const total   = comps.length;
-    const done    = Object.values(state).filter(s => s.status === 'done').length;
-    const sent    = Object.values(state).filter(s => s.sent).length;
-    const log     = JSON.parse(localStorage.getItem(`ae_proj_${p.id}_log`) || '[]');
-    const lastSent = log.length ? new Date(log[0].sentAt).toLocaleDateString() : null;
+  for (const p of projects) {
+    const stateRaw = await DB.get('emailState', `ae_proj_${p.id}_state`);
+    const compsRaw = await DB.get('sheets',     `ae_proj_${p.id}_companies`);
+    const logRaw   = await DB.get('logs',       `ae_proj_${p.id}_log`);
+    const state    = stateRaw ? JSON.parse(stateRaw) : {};
+    const comps    = compsRaw ? JSON.parse(compsRaw) : [];
+    const log      = logRaw   ? JSON.parse(logRaw)   : [];
+    const total    = comps.length;
+    const done     = Object.values(state).filter(s => s.status === 'done').length;
+    const sent     = Object.values(state).filter(s => s.sent).length;
+    const lastSent = log.length ? new Date(log[0].sentAt).toLocaleDateString('en-GB') : null;
+
+    // Theme accent for card border
+    const themeId  = await DB.get('settings', `ae_proj_${p.id}_theme`) || 'midnight';
+    const accent   = (BUILT_IN_THEMES[themeId] || BUILT_IN_THEMES.midnight).colors['--accent'];
 
     const card = document.createElement('div');
     card.className = 'proj-card';
+    card.style.borderLeft = `4px solid ${accent}`;
     card.innerHTML =
       `<div class="proj-card-name">${esc(p.name)}</div>
        <div class="proj-card-meta">
@@ -737,84 +948,103 @@ function renderHome() {
          <button class="btn" style="color:var(--danger);border-color:var(--danger);" onclick="deleteProject('${p.id}')">Delete</button>
        </div>`;
     grid.appendChild(card);
-  });
+  }
 
-  // New project card
+  // New project card — opens modal
   const newCard = document.createElement('div');
   newCard.className = 'new-proj-card';
   newCard.id = 'new-proj-card';
-  newCard.innerHTML =
-    `<div class="plus">+</div>
-     <div class="label">New Project</div>`;
-  newCard.addEventListener('click', showNewProjectForm);
+  newCard.innerHTML = `<div class="plus">+</div><div class="label">New Project</div>`;
+  newCard.addEventListener('click', showNewProjectModal);
   grid.appendChild(newCard);
 }
 
-function showNewProjectForm() {
-  const card = document.getElementById('new-proj-card');
-  card.innerHTML =
-    `<div id="new-proj-form">
-       <input type="text" id="new-proj-input" placeholder="Project name..." autofocus>
-       <button class="btn btn-primary" onclick="createProjectFromInput()">Create</button>
-       <button class="btn" onclick="renderHome()">Cancel</button>
-     </div>`;
-  card.style.cursor = 'default';
-  setTimeout(() => document.getElementById('new-proj-input')?.focus(), 0);
-  document.getElementById('new-proj-input')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') createProjectFromInput();
+// ---- New Project Modal ----
+function showNewProjectModal() {
+  document.getElementById('modal-new-project').style.display = 'flex';
+  document.getElementById('np-name').focus();
+  // Reset Excel status
+  document.getElementById('np-excel-status').textContent = '';
+  window._npExcelParsed = null;
+}
+
+function closeNewProjectModal() {
+  document.getElementById('modal-new-project').style.display = 'none';
+  window._npExcelParsed = null;
+}
+
+function npHandleExcel(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('np-excel-status');
+  status.textContent = 'Parsing...';
+  parseExcel(file).then(rows => {
+    window._npExcelParsed = { name: file.name, rows };
+    status.textContent = `${rows.length} companies loaded`;
+    status.style.color = 'var(--success)';
+  }).catch(err => {
+    status.textContent = 'Error: ' + err.message;
+    status.style.color = 'var(--danger)';
   });
 }
 
-function createProjectFromInput() {
-  const input = document.getElementById('new-proj-input');
-  const name  = input ? input.value.trim() : '';
-  if (!name) return;
-  createProject(name);
-}
+async function createProjectFromModal() {
+  const rawName = document.getElementById('np-name').value.trim();
+  const name    = rawName || 'Untitled Project';
+  const apiKey  = document.getElementById('np-apikey').value.trim();
+  const gmailCid= document.getElementById('np-gmailcid').value.trim();
 
-function getProjects() {
-  return JSON.parse(localStorage.getItem('ae_projects') || '[]');
-}
-
-function saveProjects(arr) {
-  localStorage.setItem('ae_projects', JSON.stringify(arr));
-}
-
-function createProject(name) {
   const id       = Date.now().toString(36);
-  const projects = getProjects();
+  const projects = await getProjects();
   projects.push({ id, name, createdAt: new Date().toISOString() });
-  saveProjects(projects);
+  await saveProjects(projects);
 
-  // Initialise project namespace (no default companies — user uploads their own Excel)
-  localStorage.setItem(`ae_proj_${id}_companies`,   JSON.stringify([]));
-  localStorage.setItem(`ae_proj_${id}_state`,       JSON.stringify({}));
-  localStorage.setItem(`ae_proj_${id}_template`,    JSON.stringify(DEFAULT_TEMPLATE));
-  localStorage.setItem(`ae_proj_${id}_attachments`, JSON.stringify([]));
-  localStorage.setItem(`ae_proj_${id}_excel_desc`,  DEFAULT_EXCEL_DESC);
+  const comps = window._npExcelParsed ? window._npExcelParsed.rows : [];
+  const state = {};
+  comps.forEach(c => { state[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false }; });
 
+  await DB.put('sheets',    `ae_proj_${id}_companies`,   JSON.stringify(comps));
+  await DB.put('emailState',`ae_proj_${id}_state`,       JSON.stringify(state));
+  await DB.put('templates', `ae_proj_${id}_template`,    JSON.stringify(DEFAULT_TEMPLATE));
+  await DB.put('attachments',`ae_proj_${id}_attachments`,JSON.stringify([]));
+  await DB.put('settings',  `ae_proj_${id}_excel_desc`,  DEFAULT_EXCEL_DESC);
+  if (apiKey)   await DB.put('settings', `ae_proj_${id}_apikey`,   apiKey);
+  if (gmailCid) await DB.put('settings', `ae_proj_${id}_gmailcid`, gmailCid);
+
+  closeNewProjectModal();
   renderHome();
 }
 
-function deleteProject(id) {
+async function getProjects() {
+  const s = await DB.get('projects', 'ae_projects');
+  return s ? JSON.parse(s) : [];
+}
+
+async function saveProjects(arr) {
+  await DB.put('projects', 'ae_projects', JSON.stringify(arr));
+}
+
+async function deleteProject(id) {
   if (!confirm('Delete this project and all its data? This cannot be undone.')) return;
-  const projects = getProjects().filter(p => p.id !== id);
-  saveProjects(projects);
-  // Remove all project keys
-  Object.keys(localStorage)
-    .filter(k => k.startsWith(`ae_proj_${id}_`))
-    .forEach(k => localStorage.removeItem(k));
+  const projects = (await getProjects()).filter(p => p.id !== id);
+  await saveProjects(projects);
+  const stores = ['emailState','sheets','templates','attachments','logs','settings'];
+  for (const store of stores) {
+    const entries = await DB.getAllByPrefix(store, `ae_proj_${id}_`);
+    for (const { key } of entries) await DB.delete(store, key);
+  }
   renderHome();
 }
 
-function openProject(id) {
+async function openProject(id) {
   activeProjectId = id;
-  loadProjectData();
   switchScreen('app');
+  await loadProjectData();
 }
 
 function goHome() {
   activeProjectId = null;
+  applyTheme('midnight');
   switchScreen('home');
   renderHome();
 }
@@ -822,28 +1052,29 @@ function goHome() {
 function switchScreen(name) {
   document.getElementById('screen-home').style.display = name === 'home' ? 'flex' : 'none';
   document.getElementById('screen-app').style.display  = name === 'app'  ? 'flex' : 'none';
+  document.getElementById('theme-bar').style.display   = name === 'app'  ? 'flex' : 'none';
 }
 
 // ============================================================
 //  Load project data into working state
 // ============================================================
-function loadProjectData() {
-  const projects = getProjects();
+async function loadProjectData() {
+  const projects = await getProjects();
   const proj     = projects.find(p => p.id === activeProjectId);
   document.getElementById('proj-name-label').textContent = proj ? proj.name : '';
 
-  const sc = localStorage.getItem(ns('companies'));
+  const sc = await DB.get('sheets', ns('companies'));
   companies = sc ? JSON.parse(sc) : [];
 
-  const ss = localStorage.getItem(ns('state'));
+  const ss = await DB.get('emailState', ns('state'));
   emailState = ss ? JSON.parse(ss) : {};
   companies.forEach(c => {
     if (!emailState[c.id])
       emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
   });
 
-  const st = localStorage.getItem(ns('template'));
-  template = st ? JSON.parse(st) : { ...DEFAULT_TEMPLATE };
+  const stRaw = await DB.get('templates', ns('template'));
+  template = stRaw ? JSON.parse(stRaw) : { ...DEFAULT_TEMPLATE };
   // Migrate old multi-field format → single body field
   if (!template.body && (template.para1 || template.para2)) {
     const p1  = template.para1   || '';
@@ -852,40 +1083,42 @@ function loadProjectData() {
     const sig = template.signature || '';
     template.body = `Hello {{FIRST_NAME}},\n\n${p1}\n\n${p2}\n\n[TAILORED PARAGRAPH]\n\n${cl}\n\n${sig}`;
     delete template.para1; delete template.para2; delete template.closing; delete template.signature;
-    localStorage.setItem(ns('template'), JSON.stringify(template));
+    saveTemplate();
   }
   if (!template.body) template = { ...DEFAULT_TEMPLATE };
   draftTemplate = { ...template };
 
-  const ed = localStorage.getItem(ns('excel_desc'));
+  const ed = await DB.get('settings', ns('excel_desc'));
   excelDesc = ed || DEFAULT_EXCEL_DESC;
   draftExcelDesc = excelDesc;
 
-  const att = localStorage.getItem(ns('attachments'));
+  const att = await DB.get('attachments', ns('attachments'));
   attachments = att ? JSON.parse(att) : [];
 
-  // API key & Gmail
+  // Load per-project API key (fall back to global)
+  const projApiKey  = await DB.get('settings', ns('apikey'))  || await DB.get('settings', 'ae_apikey')  || '';
+  const projGmailCid= await DB.get('settings', ns('gmailcid'))|| await DB.get('settings', 'ae_gmailcid')|| '';
+
   // Model selector
-  const savedModel = localStorage.getItem('ae_gemini_model') || 'gemini-2.5-flash';
+  const savedModel = await DB.get('settings', 'ae_gemini_model') || 'gemini-2.5-flash';
   const sel = document.getElementById('geminiModel');
   sel.innerHTML = GEMINI_MODELS.map(m =>
     `<option value="${m.id}"${m.id === savedModel ? ' selected' : ''}>${m.label}</option>`
   ).join('');
 
-  document.getElementById('apiKey').value = localStorage.getItem('ae_apikey') || '';
+  document.getElementById('apiKey').value = projApiKey;
   document.getElementById('apiKey').oninput = e => {
-    localStorage.setItem('ae_apikey', e.target.value.trim());
+    DB.put('settings', ns('apikey'), e.target.value.trim()).catch(console.error);
     hideWarning();
   };
 
-  document.getElementById('gmailClientId').value = localStorage.getItem('ae_gmailcid') || '';
+  document.getElementById('gmailClientId').value = projGmailCid;
   document.getElementById('gmailClientId').oninput = e => {
-    localStorage.setItem('ae_gmailcid', e.target.value.trim());
+    DB.put('settings', ns('gmailcid'), e.target.value.trim()).catch(console.error);
     resetGmailState();
   };
 
-  const savedCid = localStorage.getItem('ae_gmailcid') || '';
-  if (savedCid) waitForGIS(() => initGmailClient(savedCid));
+  if (projGmailCid) waitForGIS(() => initGmailClient(projGmailCid));
 
   document.getElementById('uploadBtn').onclick = () => document.getElementById('fileInput').click();
   document.getElementById('fileInput').onchange = handleUpload;
@@ -895,49 +1128,42 @@ function loadProjectData() {
     document.getElementById('stopBtn').style.display = 'none';
   };
 
+  // Apply project theme
+  const themeId = await DB.get('settings', ns('theme')) || 'midnight';
+  applyTheme(themeId);
+  activeTheme = themeId;
+  updateThemeLabel();
+
   selectedId = companies.length ? companies[0].id : null;
+  sidebarSearch = '';
   switchTab('emails');
   renderSidebar();
   if (selectedId) selectCompany(selectedId);
   refreshProgress();
+  initContextMenu();
+  initKeyboardShortcuts();
 }
 
 // ============================================================
-//  Persistence
+//  Persistence (fire-and-forget writes)
 // ============================================================
-function saveState()       { localStorage.setItem(ns('state'),       JSON.stringify(emailState)); }
-function saveCompanies()   { localStorage.setItem(ns('companies'),   JSON.stringify(companies));  }
-function saveTemplate()    { localStorage.setItem(ns('template'),    JSON.stringify(template));   }
-function saveAttachments() { localStorage.setItem(ns('attachments'), JSON.stringify(attachments)); }
-function saveExcelDesc()   { localStorage.setItem(ns('excel_desc'),  excelDesc); }
+function saveState()       { DB.put('emailState', ns('state'),       JSON.stringify(emailState)).catch(console.error); }
+function saveCompanies()   { DB.put('sheets',     ns('companies'),   JSON.stringify(companies)).catch(console.error); }
+function saveTemplate()    { DB.put('templates',  ns('template'),    JSON.stringify(template)).catch(console.error); }
+function saveAttachments() { DB.put('attachments',ns('attachments'), JSON.stringify(attachments)).catch(console.error); }
+function saveExcelDesc()   { DB.put('settings',   ns('excel_desc'),  excelDesc).catch(console.error); }
 
 // ============================================================
 //  Sidebar
 // ============================================================
-function renderSidebar() {
-  const sb = document.getElementById('sidebar');
-  sb.innerHTML = '';
-  companies.forEach(c => {
-    const st  = emailState[c.id] || { status: 'pending' };
-    const btn = document.createElement('button');
-    btn.className = 'company-btn' + (c.id === selectedId ? ' active' : '');
-    btn.dataset.id = c.id;
-    btn.innerHTML =
-      `<div class="cbtn-text">
-        <div class="cbtn-name">${esc(c.name)}</div>
-        <div class="cbtn-sector">${esc(c.sector)}</div>
-      </div>
-      <div class="dot ${dotClass(st.status)}"></div>`;
-    btn.addEventListener('click', () => selectCompany(c.id));
-    sb.appendChild(btn);
-  });
-}
+function renderSidebar() { renderSidebarWithSearch(); }
 
 function updateSidebarDot(id) {
-  const btn = document.querySelector(`.company-btn[data-id="${id}"]`);
+  const btn = document.querySelector(`.company-btn[data-id="${id}"],.company-btn[data-id="${String(id)}"]`);
   if (!btn) return;
   const st = emailState[id] || { status: 'pending' };
-  btn.querySelector('.dot').className = `dot ${dotClass(st.status)}`;
+  const dot = btn.querySelector('.dot');
+  if (dot) dot.className = `dot ${dotClass(st.status)}`;
 }
 
 function dotClass(status) {
@@ -1243,9 +1469,10 @@ function formatBytes(b) {
 // ============================================================
 //  Log view
 // ============================================================
-function renderLog() {
-  const log  = JSON.parse(localStorage.getItem(ns('log')) || '[]');
+async function renderLog() {
   const view = document.getElementById('view-log');
+  const raw  = await DB.get('logs', ns('log'));
+  const log  = raw ? JSON.parse(raw) : [];
   if (!log.length) {
     view.innerHTML = '<p class="log-empty">No emails sent yet from this project.</p>';
     return;
@@ -1255,14 +1482,33 @@ function renderLog() {
        <td>${esc(e.company)}</td>
        <td>${esc(e.pocName)}</td>
        <td>${esc(e.email)}</td>
-       <td>${new Date(e.sentAt).toLocaleString()}</td>
+       <td>${new Date(e.sentAt).toLocaleString('en-GB')}</td>
      </tr>`
   ).join('');
   view.innerHTML =
-    `<table class="log-table">
+    `<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+       <button class="btn" onclick="exportLogCsv()">Export CSV</button>
+     </div>
+     <table class="log-table">
        <thead><tr><th>Company</th><th>POC</th><th>Email</th><th>Sent at</th></tr></thead>
        <tbody>${rows}</tbody>
      </table>`;
+}
+
+async function exportLogCsv() {
+  const raw = await DB.get('logs', ns('log'));
+  const log = raw ? JSON.parse(raw) : [];
+  const header = 'Company,POC,Email,Sent At\n';
+  const rows = log.map(e =>
+    [e.company, e.pocName, e.email, new Date(e.sentAt).toLocaleString('en-GB')]
+    .map(v => `"${String(v).replace(/"/g,'""')}"`)
+    .join(',')
+  ).join('\n');
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `autoemail_log_${activeProjectId}.csv`;
+  a.click();
 }
 
 // ============================================================
@@ -1359,7 +1605,7 @@ ${body.split('\n').slice(0, 1).join('')}
 //  Gemini call
 // ============================================================
 async function callGemini(c) {
-  const resp = await fetch(geminiUrl() + encodeURIComponent(apiKey()), {
+  const resp = await fetch((await geminiUrl()) + encodeURIComponent(apiKey()), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1517,7 +1763,12 @@ function waitForGIS(cb) {
 function initGmailClient(clientId) {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: clientId,
-    scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose',
+    scope: [
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.compose',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify',
+    ].join(' '),
     callback: onGmailToken
   });
 }
@@ -1538,7 +1789,7 @@ function onGmailToken(resp) {
 function connectGmail() {
   const cid = document.getElementById('gmailClientId').value.trim();
   if (!cid) { flash('Paste your OAuth Client ID first.'); return; }
-  localStorage.setItem('ae_gmailcid', cid);
+  DB.put('settings', ns('gmailcid'), cid).catch(console.error);
   waitForGIS(() => { initGmailClient(cid); tokenClient.requestAccessToken({ prompt: 'consent' }); });
 }
 
@@ -1618,9 +1869,11 @@ async function executeDirectSend(id) {
     emailState[id] = { ...st, sent: true };
     saveState();
     // Write to log
-    const log = JSON.parse(localStorage.getItem(ns('log')) || '[]');
-    log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt: new Date().toISOString() });
-    localStorage.setItem(ns('log'), JSON.stringify(log));
+    DB.get('logs', ns('log')).then(raw => {
+      const log = raw ? JSON.parse(raw) : [];
+      log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt: new Date().toISOString() });
+      DB.put('logs', ns('log'), JSON.stringify(log)).catch(console.error);
+    });
     if (selectedId === id) renderPanel();
     flash('&#10003; Sent to ' + esc(c.poc) + '!');
   } catch (err) { flash('Send failed: ' + err.message); }
@@ -1706,6 +1959,95 @@ async function parseExcel(file) {
 }
 
 // ============================================================
+//  Theme system
+// ============================================================
+const BUILT_IN_THEMES = {
+  midnight:  { name:'Midnight',        colors:{'--bg':'#111214','--bg2':'#18191c','--bg3':'#1f2124','--bg4':'#26282d','--border':'#2e3035','--text':'#e8e8e8','--text2':'#999','--text3':'#555','--accent':'#7c6af7','--accent-h':'#6a58e0','--danger':'#e05555','--success':'#3da874','--warn':'#d4960a'} },
+  arctic:    { name:'Arctic',          colors:{'--bg':'#f0f4f8','--bg2':'#ffffff','--bg3':'#e8eef5','--bg4':'#dde5ef','--border':'#c8d5e3','--text':'#1a2433','--text2':'#5a6f85','--text3':'#9aafc0','--accent':'#2667cc','--accent-h':'#1a50aa','--danger':'#c0392b','--success':'#1e8449','--warn':'#b7770d'} },
+  dracula:   { name:'Dracula',         colors:{'--bg':'#282a36','--bg2':'#1e1f29','--bg3':'#2c2e3b','--bg4':'#383a4a','--border':'#44475a','--text':'#f8f8f2','--text2':'#bd93f9','--text3':'#6272a4','--accent':'#ff79c6','--accent-h':'#ff5cba','--danger':'#ff5555','--success':'#50fa7b','--warn':'#ffb86c'} },
+  nord:      { name:'Nord',            colors:{'--bg':'#2e3440','--bg2':'#3b4252','--bg3':'#434c5e','--bg4':'#4c566a','--border':'#4c566a','--text':'#eceff4','--text2':'#d8dee9','--text3':'#81a1c1','--accent':'#88c0d0','--accent-h':'#5e81ac','--danger':'#bf616a','--success':'#a3be8c','--warn':'#ebcb8b'} },
+  monokai:   { name:'Monokai',         colors:{'--bg':'#272822','--bg2':'#1e1f1c','--bg3':'#2d2e27','--bg4':'#383830','--border':'#49483e','--text':'#f8f8f2','--text2':'#a59f85','--text3':'#75715e','--accent':'#a6e22e','--accent-h':'#88cc20','--danger':'#f92672','--success':'#a6e22e','--warn':'#fd971f'} },
+  solarDark: { name:'Solarized Dark',  colors:{'--bg':'#002b36','--bg2':'#073642','--bg3':'#0a3d4a','--bg4':'#0d4455','--border':'#1a5566','--text':'#fdf6e3','--text2':'#93a1a1','--text3':'#586e75','--accent':'#268bd2','--accent-h':'#1a6fa8','--danger':'#dc322f','--success':'#859900','--warn':'#b58900'} },
+  solarLight:{ name:'Solarized Light', colors:{'--bg':'#fdf6e3','--bg2':'#eee8d5','--bg3':'#e8e1cc','--bg4':'#e0d9c3','--border':'#cdc8b4','--text':'#002b36','--text2':'#586e75','--text3':'#93a1a1','--accent':'#268bd2','--accent-h':'#1a6fa8','--danger':'#dc322f','--success':'#859900','--warn':'#b58900'} },
+  gruvbox:   { name:'Gruvbox',         colors:{'--bg':'#282828','--bg2':'#1d2021','--bg3':'#32302f','--bg4':'#3c3836','--border':'#504945','--text':'#ebdbb2','--text2':'#bdae93','--text3':'#7c6f64','--accent':'#d79921','--accent-h':'#b57614','--danger':'#cc241d','--success':'#98971a','--warn':'#d65d0e'} },
+  tokyoNight:{ name:'Tokyo Night',     colors:{'--bg':'#1a1b2e','--bg2':'#16213e','--bg3':'#1d2545','--bg4':'#232b55','--border':'#2d3561','--text':'#a9b1d6','--text2':'#787c99','--text3':'#444b6a','--accent':'#7aa2f7','--accent-h':'#5d8dee','--danger':'#f7768e','--success':'#9ece6a','--warn':'#e0af68'} },
+  catppuccin:{ name:'Catppuccin Mocha',colors:{'--bg':'#1e1e2e','--bg2':'#181825','--bg3':'#1e1e2e','--bg4':'#313244','--border':'#45475a','--text':'#cdd6f4','--text2':'#a6adc8','--text3':'#585b70','--accent':'#cba6f7','--accent-h':'#b38ef3','--danger':'#f38ba8','--success':'#a6e3a1','--warn':'#f9e2af'} },
+  rosePine:  { name:'Rosé Pine',       colors:{'--bg':'#191724','--bg2':'#1f1d2e','--bg3':'#26233a','--bg4':'#2c2a3d','--border':'#403d52','--text':'#e0def4','--text2':'#908caa','--text3':'#6e6a86','--accent':'#ebbcba','--accent-h':'#e4a8a6','--danger':'#eb6f92','--success':'#9ccfd8','--warn':'#f6c177'} },
+  cyberpunk: { name:'Cyberpunk',       colors:{'--bg':'#000000','--bg2':'#0a000a','--bg3':'#100010','--bg4':'#180018','--border':'#2a002a','--text':'#ff00ff','--text2':'#00ffff','--text3':'#440044','--accent':'#00ffff','--accent-h':'#00cccc','--danger':'#ff0040','--success':'#00ff41','--warn':'#ffff00'} },
+  terminal:  { name:'Terminal',        colors:{'--bg':'#0a0a0a','--bg2':'#0d0d0d','--bg3':'#141414','--bg4':'#1a1a1a','--border':'#1a3a1a','--text':'#00ff00','--text2':'#00bb00','--text3':'#005500','--accent':'#00ff00','--accent-h':'#00cc00','--danger':'#ff3333','--success':'#00ff00','--warn':'#ffff00'}, special:{fontFamily:"'Courier New',monospace",borderRadius:'0'} },
+  pastel:    { name:'Pastel Dream',    colors:{'--bg':'#f5eef8','--bg2':'#ede3f5','--bg3':'#e8dcf2','--bg4':'#e0d2eb','--border':'#d4c3e8','--text':'#3a2d4a','--text2':'#7a6b8a','--text3':'#b0a0c0','--accent':'#c084fc','--accent-h':'#a855f7','--danger':'#f87171','--success':'#4ade80','--warn':'#fbbf24'} },
+  sakura:    { name:'Sakura',          colors:{'--bg':'#fff0f5','--bg2':'#ffe4ef','--bg3':'#ffd6e8','--bg4':'#ffc8e0','--border':'#ffb0d4','--text':'#4a1a2c','--text2':'#9a5a70','--text3':'#d4a0b0','--accent':'#e8749a','--accent-h':'#d4547a','--danger':'#e05555','--success':'#3da874','--warn':'#d4960a'} },
+  ocean:     { name:'Ocean',           colors:{'--bg':'#0d1b2a','--bg2':'#1b2838','--bg3':'#1f3048','--bg4':'#253858','--border':'#2e4a6a','--text':'#e0f4ff','--text2':'#7ab8d4','--text3':'#3a6a88','--accent':'#00d4aa','--accent-h':'#00b892','--danger':'#ff6b6b','--success':'#00d4aa','--warn':'#ffd166'} },
+  sunset:    { name:'Sunset',          colors:{'--bg':'#1a0a0a','--bg2':'#250f0f','--bg3':'#2e1515','--bg4':'#3a1c1c','--border':'#50282a','--text':'#f0e0d0','--text2':'#c09080','--text3':'#806050','--accent':'#ff8c42','--accent-h':'#e67030','--danger':'#ff4466','--success':'#6dcb5e','--warn':'#ffcc00'} },
+  paper:     { name:'Paper',           colors:{'--bg':'#faf8f5','--bg2':'#f2f0ec','--bg3':'#eae7e2','--bg4':'#e0dcd6','--border':'#ccc8c0','--text':'#2a2420','--text2':'#7a6e66','--text3':'#b0a898','--accent':'#4a7ab5','--accent-h':'#3a6aa5','--danger':'#c0392b','--success':'#1e7a40','--warn':'#7a5500'} },
+  hacker:    { name:'Hacker',          colors:{'--bg':'#000800','--bg2':'#001200','--bg3':'#001800','--bg4':'#002000','--border':'#003300','--text':'#ffb000','--text2':'#cc8800','--text3':'#664400','--accent':'#ff9900','--accent-h':'#cc7700','--danger':'#ff2200','--success':'#00ff41','--warn':'#ffff00'}, special:{fontFamily:"'Courier New',monospace",borderRadius:'0'} },
+  lavender:  { name:'Lavender',        colors:{'--bg':'#2a2640','--bg2':'#231f38','--bg3':'#2c2848','--bg4':'#353050','--border':'#453e65','--text':'#e8e4ff','--text2':'#a8a0cc','--text3':'#706890','--accent':'#b09aff','--accent-h':'#9880ee','--danger':'#ff6b8a','--success':'#7bd9a5','--warn':'#ffca7a'} },
+};
+
+let activeTheme = 'midnight';
+
+function applyTheme(themeId) {
+  const theme = BUILT_IN_THEMES[themeId] || BUILT_IN_THEMES.midnight;
+  const root  = document.documentElement;
+  Object.entries(theme.colors).forEach(([k, v]) => root.style.setProperty(k, v));
+  // Special overrides (Terminal, Hacker)
+  if (theme.special) {
+    if (theme.special.fontFamily) document.body.style.fontFamily = theme.special.fontFamily;
+    if (theme.special.borderRadius !== undefined) {
+      root.style.setProperty('--br', theme.special.borderRadius);
+      document.querySelectorAll('.btn,.proj-card,.company-btn,#login-card,#tutorial-card,#new-proj-modal-card').forEach(el => {
+        el.style.borderRadius = theme.special.borderRadius;
+      });
+    }
+  } else {
+    document.body.style.fontFamily = '';
+    root.style.setProperty('--br', '');
+  }
+  activeTheme = themeId;
+}
+
+function updateThemeLabel() {
+  const el = document.getElementById('theme-bar-link');
+  if (!el) return;
+  const theme = BUILT_IN_THEMES[activeTheme] || BUILT_IN_THEMES.midnight;
+  el.textContent = `Theme: ${theme.name}`;
+}
+
+function toggleThemePicker() {
+  const ov = document.getElementById('theme-picker-overlay');
+  if (ov.style.display === 'flex') { ov.style.display = 'none'; return; }
+  renderThemePicker();
+  ov.style.display = 'flex';
+}
+
+function renderThemePicker() {
+  const container = document.getElementById('theme-swatches-container');
+  const all = { ...BUILT_IN_THEMES };
+  container.innerHTML = Object.entries(all).map(([id, t]) => {
+    const bg  = t.colors['--bg'];
+    const acc = t.colors['--accent'];
+    const txt = t.colors['--text'];
+    return `<div class="theme-swatch${id === activeTheme ? ' active' : ''}" onclick="selectTheme('${id}')">
+      <div class="swatch-rect" style="background:${bg}">
+        <div class="swatch-dot" style="background:${acc}"></div>
+        <div class="swatch-dot" style="background:${txt};opacity:0.6"></div>
+      </div>
+      <div class="swatch-name">${t.name}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectTheme(themeId) {
+  applyTheme(themeId);
+  updateThemeLabel();
+  DB.put('settings', ns('theme'), themeId).catch(console.error);
+  // Update active state in picker
+  document.querySelectorAll('.theme-swatch').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('onclick') === `selectTheme('${themeId}')`);
+  });
+}
+
+// ============================================================
 //  Tutorial
 // ============================================================
 const TUTORIAL_CONTENT = {
@@ -1771,6 +2113,158 @@ function switchTutTab(tab) {
   document.getElementById('tutorial-body').innerHTML = TUTORIAL_CONTENT[tab];
   document.getElementById('tut-tab-gemini').classList.toggle('active', tab === 'gemini');
   document.getElementById('tut-tab-gmail').classList.toggle('active',  tab === 'gmail');
+}
+
+// ============================================================
+//  Sidebar search
+// ============================================================
+let sidebarSearch = '';
+
+function renderSidebarWithSearch() {
+  const sb = document.getElementById('sidebar');
+  const prevScroll = sb.scrollTop;
+  const filtered = sidebarSearch
+    ? companies.filter(c =>
+        [c.name, c.sector, c.poc, c.email].some(v => v.toLowerCase().includes(sidebarSearch)))
+    : companies;
+
+  sb.innerHTML =
+    `<div style="padding:6px 8px 2px;">
+       <input type="text" id="sidebar-search-input" class="topbar-input" style="width:100%;font-size:12px;"
+         placeholder="Search companies..." value="${esc(sidebarSearch)}"
+         oninput="sidebarSearch=this.value.toLowerCase();renderSidebarWithSearch()" />
+     </div>`;
+  filtered.forEach(c => {
+    const st  = emailState[c.id] || { status: 'pending' };
+    const btn = document.createElement('button');
+    btn.className = 'company-btn' + (c.id === selectedId ? ' active' : '');
+    btn.dataset.id = c.id;
+    btn.innerHTML =
+      `<div class="cbtn-text">
+        <div class="cbtn-name">${esc(c.name)}</div>
+        <div class="cbtn-sector">${esc(c.sector)}</div>
+      </div>
+      <div class="dot ${dotClass(st.status)}"></div>`;
+    btn.addEventListener('click', () => selectCompany(c.id));
+    sb.appendChild(btn);
+  });
+  sb.scrollTop = prevScroll;
+}
+
+// ============================================================
+//  Right-click context menu
+// ============================================================
+let ctxMenuCompanyId = null;
+
+function initContextMenu() {
+  document.addEventListener('contextmenu', e => {
+    const btn = e.target.closest('.company-btn');
+    if (!btn) return;
+    e.preventDefault();
+    ctxMenuCompanyId = btn.dataset.id;
+    // Try numeric id first, then string
+    const numId = Number(ctxMenuCompanyId);
+    const c = companies.find(x => x.id === numId || x.id === ctxMenuCompanyId);
+    if (!c) return;
+    showContextMenu(e.clientX, e.clientY, c);
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#ctx-menu')) hideContextMenu();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideContextMenu(); });
+}
+
+function showContextMenu(x, y, c) {
+  hideContextMenu();
+  const menu = document.createElement('div');
+  menu.id = 'ctx-menu';
+  menu.style.cssText = `position:fixed;left:${Math.min(x, window.innerWidth-300)}px;top:${Math.min(y, window.innerHeight-300)}px;
+    width:280px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+    padding:12px;z-index:500;box-shadow:0 8px 32px rgba(0,0,0,0.4);display:flex;flex-direction:column;gap:8px;`;
+  menu.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px;">Edit Company</div>
+    ${ctxField('ctx-cname','Company name',c.name)}
+    ${ctxField('ctx-cpoc','POC name',c.poc)}
+    ${ctxField('ctx-cemail','Email',c.email)}
+    ${ctxField('ctx-csector','Sector',c.sector)}
+    ${ctxField('ctx-clinkedin','LinkedIn',c.linkedin)}
+    <button class="btn btn-primary" style="margin-top:4px;" onclick="saveContextEdit()">Save</button>`;
+  document.body.appendChild(menu);
+}
+
+function ctxField(id, label, val) {
+  return `<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);">${label}
+    <input id="${id}" class="np-input" style="font-size:12px;padding:5px 8px;" value="${esc(val)}"></label>`;
+}
+
+function saveContextEdit() {
+  const numId = Number(ctxMenuCompanyId);
+  const c = companies.find(x => x.id === numId || x.id === ctxMenuCompanyId);
+  if (!c) return;
+  c.name     = document.getElementById('ctx-cname')?.value.trim()    || c.name;
+  c.poc      = document.getElementById('ctx-cpoc')?.value.trim()     || c.poc;
+  c.email    = document.getElementById('ctx-cemail')?.value.trim()   || c.email;
+  c.sector   = document.getElementById('ctx-csector')?.value.trim()  || c.sector;
+  c.linkedin = document.getElementById('ctx-clinkedin')?.value.trim()|| c.linkedin;
+  saveCompanies();
+  renderSidebarWithSearch();
+  if (selectedId === c.id) renderPanel();
+  hideContextMenu();
+}
+
+function hideContextMenu() {
+  const m = document.getElementById('ctx-menu');
+  if (m) m.remove();
+}
+
+// ============================================================
+//  Send All
+// ============================================================
+async function sendAll() {
+  if (!gmailToken) { flash('Connect Gmail first.'); return; }
+  const pending = companies.filter(c => emailState[c.id]?.status === 'done' && !emailState[c.id]?.sent);
+  if (!pending.length) { flash('No generated (unsent) emails ready.'); return; }
+  if (!confirm(`Send ${pending.length} emails via Gmail? A 2-second delay between each.`)) return;
+
+  stopRequested = false;
+  document.getElementById('genAllBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+
+  for (let i = 0; i < pending.length; i++) {
+    if (stopRequested) break;
+    document.getElementById('progress-label').textContent = `Sending ${i+1} / ${pending.length}...`;
+    await executeDirectSend(pending[i].id);
+    if (i < pending.length - 1) await sleep(2000);
+  }
+
+  document.getElementById('genAllBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+  refreshProgress();
+}
+
+// ============================================================
+//  Keyboard shortcuts
+// ============================================================
+function initKeyboardShortcuts() {
+  document.addEventListener('keydown', e => {
+    const inInput = ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable;
+    if (e.key === 'Escape') {
+      document.getElementById('theme-picker-overlay').style.display = 'none';
+      hideContextMenu();
+      return;
+    }
+    if (e.key === '/' && !inInput) { e.preventDefault(); document.getElementById('sidebar-search-input')?.focus(); return; }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !inInput && selectedId) {
+      e.preventDefault();
+      const idx  = companies.findIndex(c => c.id === selectedId);
+      const next = companies[Math.max(0, Math.min(companies.length-1, idx + (e.key==='ArrowDown'?1:-1)))];
+      if (next) selectCompany(next.id);
+      return;
+    }
+    if (e.ctrlKey && e.key === 'Enter')                      { e.preventDefault(); if (selectedId) triggerGmail(selectedId,'send'); }
+    if (e.ctrlKey && e.shiftKey && e.key.toUpperCase()==='D'){ e.preventDefault(); if (selectedId) triggerGmail(selectedId,'draft'); }
+    if (e.ctrlKey && e.key.toLowerCase()==='g' && !inInput)  { e.preventDefault(); if (selectedId) triggerGenerate(selectedId); }
+  });
 }
 
 // ============================================================
