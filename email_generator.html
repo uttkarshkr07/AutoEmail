@@ -630,7 +630,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     </div>
 
     <div class="topbar-group">
-      <button class="btn" id="uploadBtn">Upload Excel</button>
+      <button class="btn" id="uploadBtn">+ Add Sheet</button>
       <input type="file" id="fileInput" accept=".xlsx" style="display:none">
       <span id="upload-info"></span>
     </div>
@@ -745,9 +745,11 @@ const DEFAULT_COLMAP = { name: 1, poc: 2, sector: 3, email: 4, linkedin: 5 };
 //  State
 // ============================================================
 let activeProjectId = null;
-let companies    = [];
-let emailState   = {};
-let selectedId   = null;
+let companies       = [];   // derived flat view of active sheets
+let sheets          = [];   // [{ id, name, companies:[] }]
+let activeSheetIds  = [];
+let emailState      = {};
+let selectedId      = null;
 let generatingAll   = false;
 let stopRequested   = false;
 let flashTimer      = null;
@@ -756,6 +758,7 @@ let draftTemplate   = {};
 let excelDesc       = DEFAULT_EXCEL_DESC;
 let draftExcelDesc  = DEFAULT_EXCEL_DESC;
 let attachments     = [];   // [{ name, b64, mime, size }]
+let followupTemplates = []; // [{ name, body, rules, useGemini }]
 let gmailToken      = null;
 let tokenClient     = null;
 let pendingGmail    = null;
@@ -1063,8 +1066,20 @@ async function loadProjectData() {
   const proj     = projects.find(p => p.id === activeProjectId);
   document.getElementById('proj-name-label').textContent = proj ? proj.name : '';
 
-  const sc = await DB.get('sheets', ns('companies'));
-  companies = sc ? JSON.parse(sc) : [];
+  // Load sheets (multi-sheet support)
+  const sheetsRaw = await DB.get('sheets', ns('sheets'));
+  if (sheetsRaw) {
+    sheets = JSON.parse(sheetsRaw);
+  } else {
+    // Migrate old single companies array
+    const sc = await DB.get('sheets', ns('companies'));
+    const oldComps = sc ? JSON.parse(sc) : [];
+    sheets = oldComps.length
+      ? [{ id: 'sheet_default', name: 'Imported', companies: oldComps }]
+      : [];
+  }
+  activeSheetIds = sheets.map(s => s.id);
+  recomputeActiveCompanies();
 
   const ss = await DB.get('emailState', ns('state'));
   emailState = ss ? JSON.parse(ss) : {};
@@ -1072,6 +1087,10 @@ async function loadProjectData() {
     if (!emailState[c.id])
       emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
   });
+
+  // Load follow-up templates
+  const fuRaw = await DB.get('followupTemplates', ns('followup_templates'));
+  followupTemplates = fuRaw ? JSON.parse(fuRaw) : [];
 
   const stRaw = await DB.get('templates', ns('template'));
   template = stRaw ? JSON.parse(stRaw) : { ...DEFAULT_TEMPLATE };
@@ -1137,6 +1156,7 @@ async function loadProjectData() {
   selectedId = companies.length ? companies[0].id : null;
   sidebarSearch = '';
   switchTab('emails');
+  renderSheetSelector();
   renderSidebar();
   if (selectedId) selectCompany(selectedId);
   refreshProgress();
@@ -1152,6 +1172,46 @@ function saveCompanies()   { DB.put('sheets',     ns('companies'),   JSON.string
 function saveTemplate()    { DB.put('templates',  ns('template'),    JSON.stringify(template)).catch(console.error); }
 function saveAttachments() { DB.put('attachments',ns('attachments'), JSON.stringify(attachments)).catch(console.error); }
 function saveExcelDesc()   { DB.put('settings',   ns('excel_desc'),  excelDesc).catch(console.error); }
+function saveSheets()      { DB.put('sheets', ns('sheets'), JSON.stringify(sheets)).catch(console.error); }
+function saveFollowupTemplates() { DB.put('followupTemplates', ns('followup_templates'), JSON.stringify(followupTemplates)).catch(console.error); }
+
+function recomputeActiveCompanies() {
+  companies = sheets
+    .filter(s => activeSheetIds.includes(s.id))
+    .flatMap(s => s.companies);
+}
+
+function renderSheetSelector() {
+  let el = document.getElementById('sheet-selector');
+  if (!el) {
+    // Inject above sidebar
+    const emailsView = document.getElementById('view-emails');
+    const sidebar = document.getElementById('sidebar');
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;width:250px;flex-shrink:0;';
+    el = document.createElement('div');
+    el.id = 'sheet-selector';
+    el.style.cssText = 'background:var(--bg2);border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px 8px;flex-shrink:0;';
+    emailsView.insertBefore(wrap, sidebar);
+    wrap.appendChild(el);
+    wrap.appendChild(sidebar);
+  }
+  if (!sheets.length) { el.innerHTML = ''; return; }
+  el.innerHTML = sheets.map(s =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);padding:2px 0;cursor:pointer;">
+       <input type="checkbox" ${activeSheetIds.includes(s.id)?'checked':''} onchange="toggleSheet('${s.id}',this.checked)">
+       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.name)}">${esc(s.name)}</span>
+     </label>`
+  ).join('');
+}
+
+function toggleSheet(sheetId, checked) {
+  if (checked) { if (!activeSheetIds.includes(sheetId)) activeSheetIds.push(sheetId); }
+  else { activeSheetIds = activeSheetIds.filter(id => id !== sheetId); }
+  recomputeActiveCompanies();
+  selectedId = companies[0]?.id || null;
+  renderSidebar(); if (selectedId) renderPanel(); refreshProgress();
+}
 
 // ============================================================
 //  Sidebar
@@ -1178,24 +1238,50 @@ function dotClass(status) {
 function selectCompany(id) {
   selectedId = id;
   document.querySelectorAll('.company-btn').forEach(b =>
-    b.classList.toggle('active', Number(b.dataset.id) === id));
+    b.classList.toggle('active', String(b.dataset.id) === String(id)));
   renderPanel();
 }
 
 function renderPanel() {
   const panel = document.getElementById('panel');
   if (!selectedId) { panel.innerHTML = '<p class="muted">Select a company from the sidebar.</p>'; return; }
-  const c  = companies.find(x => x.id === selectedId);
-  const st = emailState[selectedId] || { status: 'pending' };
+  const c  = companies.find(x => String(x.id) === String(selectedId));
+  const st = emailState[String(selectedId)] || { status: 'pending' };
   if (!c) return;
   const toLine = `<div class="p-to">To: <strong>${esc(c.poc)}</strong> &lt;${esc(c.email)}&gt;</div>`;
+
+  const cid = String(c.id);
 
   switch (st.status) {
     case 'pending':
       panel.innerHTML =
         toLine +
         `<p class="muted">No email generated yet.</p>
-         <button class="btn btn-primary" onclick="triggerGenerate(${c.id})">Generate email</button>`;
+         <div style="display:flex;gap:10px;flex-wrap:wrap;">
+           <button class="btn btn-primary" onclick="triggerGenerate('${cid}')">Generate with AI</button>
+           <button class="btn" onclick="startManualWrite('${cid}')">Write manually</button>
+         </div>`;
+      break;
+    case 'manual':
+      panel.innerHTML =
+        toLine +
+        `<div class="p-subject-label">Subject</div>
+         <div class="p-subject-box p-subject-editable" contenteditable="true"
+              id="edit-subject-${cid}" oninput="saveEdits('${cid}')"></div>
+         <div class="fmt-toolbar">
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('bold')" title="Bold"><b>B</b></button>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('italic')" title="Italic"><i>I</i></button>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('underline')" title="Underline"><u>U</u></button>
+           <div class="fmt-sep"></div>
+           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('removeFormat')" title="Clear formatting" style="font-size:11px;">Tx</button>
+         </div>
+         <div class="p-body-editor" contenteditable="true"
+              id="edit-body-${cid}" oninput="saveEdits('${cid}')">${toEditorHtml(template.body||'').replace(/\[TAILORED PARAGRAPH\]/g,'<span style="background:rgba(124,106,247,0.2);border-radius:3px;padding:0 3px;">[write your paragraph here]</span>')}</div>
+         <div class="send-row">
+           <button class="btn btn-primary" onclick="manualDone('${cid}')">Done</button>
+           <button class="btn" onclick="setState('${cid}',{...emailState['${cid}'],status:'pending'})">Cancel</button>
+         </div>
+         <div id="flash"></div>`;
       break;
     case 'loading':
       panel.innerHTML = `<div class="loading-msg">Researching ${esc(c.name)} and writing email...</div>`;
@@ -1205,41 +1291,54 @@ function renderPanel() {
         toLine +
         `<div class="err-title">Generation failed.</div>
          <div class="err-box">${esc(st.error)}</div>
-         <button class="btn btn-primary" onclick="triggerGenerate(${c.id})">Retry</button>`;
+         <button class="btn btn-primary" onclick="triggerGenerate('${cid}')">Retry</button>`;
       break;
     case 'done':
-      panel.innerHTML =
-        toLine +
-        `<div class="p-subject-label">Subject</div>
-         <div class="p-subject-box p-subject-editable"
-              contenteditable="true"
-              id="edit-subject-${c.id}"
-              oninput="saveEdits(${c.id})">${esc(st.subject)}</div>
+      if (st.locked && st.sent) {
+        // Locked sent email
+        const sentDate = st.sentAt ? new Date(st.sentAt).toLocaleString('en-GB') : 'unknown time';
+        panel.innerHTML =
+          toLine +
+          `<div class="p-subject-label">Subject</div>
+           <div class="p-subject-box" style="background:var(--bg2);color:var(--text2);">${esc(st.subject)}</div>
+           <div class="p-body-editor" style="background:var(--bg2);color:var(--text2);cursor:default;">${bodyToHtml(st.body)}</div>
+           <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">&#10003; Sent on ${sentDate}</div>
+           ${renderFollowupSection(cid)}
+           <div id="flash"></div>`;
+      } else {
+        panel.innerHTML =
+          toLine +
+          `<div class="p-subject-label">Subject</div>
+           <div class="p-subject-box p-subject-editable"
+                contenteditable="true"
+                id="edit-subject-${cid}"
+                oninput="saveEdits('${cid}')">${esc(st.subject)}</div>
 
-         <div class="fmt-toolbar">
-           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('bold')" title="Bold"><b>B</b></button>
-           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('italic')" title="Italic"><i>I</i></button>
-           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('underline')" title="Underline"><u>U</u></button>
-           <div class="fmt-sep"></div>
-           <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('removeFormat')" title="Clear formatting" style="font-size:11px;">Tx</button>
-         </div>
-         <div class="p-body-editor"
-              contenteditable="true"
-              id="edit-body-${c.id}"
-              oninput="saveEdits(${c.id})">${bodyToHtml(st.body)}</div>
+           <div class="fmt-toolbar">
+             <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('bold')" title="Bold"><b>B</b></button>
+             <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('italic')" title="Italic"><i>I</i></button>
+             <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('underline')" title="Underline"><u>U</u></button>
+             <div class="fmt-sep"></div>
+             <button class="fmt-btn" onmousedown="event.preventDefault();applyFmt('removeFormat')" title="Clear formatting" style="font-size:11px;">Tx</button>
+           </div>
+           <div class="p-body-editor"
+                contenteditable="true"
+                id="edit-body-${cid}"
+                oninput="saveEdits('${cid}')">${bodyToHtml(st.body)}</div>
 
-         <div class="copy-row">
-           <button class="btn" onclick="copyBody()">Copy body</button>
-           <button class="btn" onclick="copySubject()">Copy subject</button>
-           <button class="btn" onclick="copyAll()">Copy all</button>
-           <button class="btn" onclick="triggerRegenerate(${c.id})">Regenerate</button>
-         </div>
-         <div class="send-row">
-           <button class="btn btn-primary" onclick="triggerGmail(${c.id}, 'send')">Send now</button>
-           <button class="btn" onclick="triggerGmail(${c.id}, 'draft')">Schedule in Gmail</button>
-           ${st.sent ? `<span style="font-size:12px;color:var(--success);align-self:center;">&#10003; Sent</span>` : ''}
-         </div>
-         <div id="flash"></div>`;
+           <div class="copy-row">
+             <button class="btn" onclick="copyBody()">Copy body</button>
+             <button class="btn" onclick="copySubject()">Copy subject</button>
+             <button class="btn" onclick="copyAll()">Copy all</button>
+             <button class="btn" onclick="triggerRegenerate('${cid}')">Regenerate</button>
+           </div>
+           <div class="send-row">
+             <button class="btn btn-primary" onclick="triggerGmail('${cid}', 'send')">Send now</button>
+             <button class="btn" onclick="triggerGmail('${cid}', 'draft')">Schedule in Gmail</button>
+             ${st.sent ? `<span style="font-size:12px;color:var(--success);align-self:center;">&#10003; Sent</span>` : ''}
+           </div>
+           <div id="flash"></div>`;
+      }
       break;
   }
 }
@@ -1307,12 +1406,61 @@ function renderSettings() {
 
      <hr class="tmpl-divider">
 
+     <div class="tmpl-section" id="followup-templates-section">
+       <div class="tmpl-label">Follow-up Templates</div>
+       <div class="tmpl-hint">Templates used when sending follow-ups after a sent email. Toggle "Use Gemini AI" to auto-generate tailored follow-ups.</div>
+       <div id="fu-template-list"></div>
+       <button class="btn" style="margin-top:8px;" onclick="addFollowupTemplate()">+ Add Follow-up Template</button>
+     </div>
+
+     <hr class="tmpl-divider">
+
      <div class="tmpl-section">
        <button class="btn-link" onclick="resetSettingsToDefaults()">Reset all fields to defaults</button>
      </div>`;
 
   // Attach toolbar event listeners after render
   fields.forEach(f => initEditorToolbar(f.key));
+
+  // Render follow-up templates list
+  renderFollowupTemplatesList();
+}
+
+function renderFollowupTemplatesList() {
+  const container = document.getElementById('fu-template-list');
+  if (!container) return;
+  if (!followupTemplates.length) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--text3);margin-bottom:8px;">No follow-up templates yet.</div>`;
+    return;
+  }
+  container.innerHTML = followupTemplates.map((t, i) => `
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <input class="np-input" style="flex:1;font-size:13px;" value="${esc(t.name)}"
+          oninput="followupTemplates[${i}].name=this.value;saveFollowupTemplates()">
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);white-space:nowrap;cursor:pointer;">
+          <input type="checkbox" ${t.useGemini?'checked':''} onchange="followupTemplates[${i}].useGemini=this.checked;saveFollowupTemplates()">
+          Use Gemini AI
+        </label>
+        <button class="btn" style="color:var(--danger);border-color:var(--danger);padding:3px 8px;font-size:11px;" onclick="deleteFollowupTemplate(${i})">Remove</button>
+      </div>
+      <div class="tmpl-hint">Body (use {{COMPANY}}, {{FIRST_NAME}})</div>
+      <textarea class="tmpl-textarea" rows="4" oninput="followupTemplates[${i}].body=this.value;saveFollowupTemplates()">${esc(t.body)}</textarea>
+      <div class="tmpl-hint" style="margin-top:8px;">Generation rules (Gemini only)</div>
+      <textarea class="tmpl-textarea" rows="2" oninput="followupTemplates[${i}].rules=this.value;saveFollowupTemplates()">${esc(t.rules||'')}</textarea>
+    </div>`).join('');
+}
+
+function addFollowupTemplate() {
+  followupTemplates.push({ name: 'Follow-up ' + (followupTemplates.length + 1), body: 'Hi {{FIRST_NAME}},\n\nI wanted to follow up on my previous email regarding an internship opportunity at {{COMPANY}}.\n\nI remain very interested and would love to connect.', rules: 'Keep it brief. Reference the original email.', useGemini: false });
+  saveFollowupTemplates();
+  renderFollowupTemplatesList();
+}
+
+function deleteFollowupTemplate(i) {
+  followupTemplates.splice(i, 1);
+  saveFollowupTemplates();
+  renderFollowupTemplatesList();
 }
 
 function toEditorHtml(val) {
@@ -1527,7 +1675,7 @@ function getSubjectText() { const el = document.getElementById('edit-subject-' +
 function copyBody()    { copy(getBodyText()); }
 function copySubject() { copy(getSubjectText()); }
 function copyAll() {
-  const c = companies.find(x => x.id === selectedId);
+  const c = companies.find(x => String(x.id) === String(selectedId));
   if (!c) return;
   copy(`To: ${c.email}\nSubject: ${getSubjectText()}\n\n${getBodyText()}`);
 }
@@ -1537,7 +1685,7 @@ function copy(text) { navigator.clipboard.writeText(text).then(() => flash('Copi
 //  Progress
 // ============================================================
 function refreshProgress() {
-  const done  = companies.filter(c => emailState[c.id]?.status === 'done').length;
+  const done  = companies.filter(c => emailState[String(c.id)]?.status === 'done').length;
   const total = companies.length;
   const el    = document.getElementById('progress-label');
   el.textContent = (done > 0 || generatingAll) ? `${done} / ${total} done` : '';
@@ -1673,27 +1821,28 @@ function buildHtmlBody(c, tailored) {
 //  Generate
 // ============================================================
 async function generateOne(id) {
-  const c = companies.find(x => x.id === id);
+  const sid = String(id);
+  const c = companies.find(x => String(x.id) === sid);
   if (!c) return;
-  setState(id, { status: 'loading', subject: '', body: '', error: '', sent: false });
+  setState(sid, { status: 'loading', subject: '', body: '', error: '', sent: false });
   try {
     const result  = await callGemini(c);
-    // Build formatted HTML body using template HTML + extracted tailored paragraph
     const htmlBody = result.tailored
       ? buildHtmlBody(c, result.tailored)
-      : result.body;   // fallback: plain text if extraction failed
-    setState(id, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
+      : result.body;
+    setState(sid, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
   } catch (err) {
-    setState(id, { status: 'error', subject: '', body: '', error: String(err), sent: false });
+    setState(sid, { status: 'error', subject: '', body: '', error: String(err), sent: false });
   }
   refreshProgress();
 }
 
 function setState(id, s) {
-  emailState[id] = s;
+  const sid = String(id);
+  emailState[sid] = s;
   saveState();
-  updateSidebarDot(id);
-  if (selectedId === id) renderPanel();
+  updateSidebarDot(sid);
+  if (String(selectedId) === sid) renderPanel();
 }
 
 function triggerGenerate(id) {
@@ -1716,7 +1865,7 @@ async function generateAll() {
   document.getElementById('genAllBtn').disabled = true;
   document.getElementById('stopBtn').style.display = 'inline-block';
   refreshProgress();
-  const queue = companies.filter(c => emailState[c.id]?.status !== 'done');
+  const queue = companies.filter(c => emailState[String(c.id)]?.status !== 'done');
   for (let i = 0; i < queue.length; i++) {
     if (stopRequested) break;
     await generateOne(queue[i].id);
@@ -1740,11 +1889,11 @@ function bodyToHtml(text) {
 function applyFmt(cmd) { document.execCommand(cmd, false, null); }
 function saveEdits(id) {
   const st = emailState[id];
-  if (!st || st.status !== 'done') return;
+  if (!st || (st.status !== 'done' && st.status !== 'manual')) return;
   const subjectEl = document.getElementById('edit-subject-' + id);
   const bodyEl    = document.getElementById('edit-body-'    + id);
-  if (!subjectEl || !bodyEl) return;
-  emailState[id] = { ...st, subject: subjectEl.innerText.trim(), body: bodyEl.innerHTML };
+  if (subjectEl) emailState[id] = { ...emailState[id], subject: subjectEl.innerText.trim() };
+  if (bodyEl)    emailState[id] = { ...emailState[id], body: bodyEl.innerHTML };
   saveState();
 }
 
@@ -1799,7 +1948,7 @@ function triggerGmail(id, action) {
   if (!cid) { flash('Paste your Gmail Client ID in the top bar and click Connect.'); return; }
   if (!tokenClient) waitForGIS(() => initGmailClient(cid));
   if (!gmailToken) { pendingGmail = { id, action }; tokenClient.requestAccessToken(); return; }
-  action === 'send' ? executeDirectSend(id) : executeCreateDraft(id);
+  action === 'send' ? executeDirectSend(String(id)) : executeCreateDraft(String(id));
 }
 
 function showGmailStatus(ok) {
@@ -1845,13 +1994,15 @@ function toBase64Url(str) {
 }
 
 function getHtmlBody(id) {
-  const el = document.getElementById('edit-body-' + id);
-  return el ? el.innerHTML : bodyToHtml(emailState[id]?.body || '');
+  const sid = String(id);
+  const el  = document.getElementById('edit-body-' + sid);
+  return el ? el.innerHTML : bodyToHtml(emailState[sid]?.body || '');
 }
 
 async function executeDirectSend(id) {
-  const c = companies.find(x => x.id === id);
-  const st = emailState[id];
+  const sid = String(id);
+  const c = companies.find(x => String(x.id) === sid);
+  const st = emailState[sid];
   if (!c || !st) return;
   flash('Sending...');
   try {
@@ -1866,7 +2017,7 @@ async function executeDirectSend(id) {
       if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
       throw new Error(err?.error?.message || 'HTTP ' + resp.status);
     }
-    emailState[id] = { ...st, sent: true };
+    emailState[sid] = { ...st, sent: true, locked: true, sentAt: new Date().toISOString() };
     saveState();
     // Write to log
     DB.get('logs', ns('log')).then(raw => {
@@ -1874,14 +2025,15 @@ async function executeDirectSend(id) {
       log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt: new Date().toISOString() });
       DB.put('logs', ns('log'), JSON.stringify(log)).catch(console.error);
     });
-    if (selectedId === id) renderPanel();
+    if (String(selectedId) === sid) renderPanel();
     flash('&#10003; Sent to ' + esc(c.poc) + '!');
   } catch (err) { flash('Send failed: ' + err.message); }
 }
 
 async function executeCreateDraft(id) {
-  const c = companies.find(x => x.id === id);
-  const st = emailState[id];
+  const sid = String(id);
+  const c = companies.find(x => String(x.id) === sid);
+  const st = emailState[sid];
   if (!c || !st) return;
   flash('Creating draft...');
   try {
@@ -1910,20 +2062,28 @@ async function handleUpload(e) {
   e.target.value = '';
   const info = document.getElementById('upload-info');
   try {
-    const parsed = await parseExcel(file);
+    const sheetId = 'sheet_' + Date.now().toString(36);
+    // Prefix company IDs with sheetId to avoid collision
+    const rawParsed = await parseExcel(file);
+    const parsed = rawParsed.map(c => ({ ...c, id: sheetId + '_' + c.id }));
     if (!parsed.length) {
       info.textContent = 'No valid rows found. Check column mapping in Settings.';
       info.className = 'err'; return;
     }
-    companies = parsed; emailState = {};
-    companies.forEach(c => {
-      emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
+    sheets.push({ id: sheetId, name: file.name, companies: parsed });
+    activeSheetIds = sheets.map(s => s.id);
+    recomputeActiveCompanies();
+    // Init emailState for new companies
+    parsed.forEach(c => {
+      if (!emailState[c.id])
+        emailState[c.id] = { status: 'pending', subject: '', body: '', error: '', sent: false };
     });
-    saveCompanies(); saveState();
-    info.textContent = `${file.name} — ${parsed.length} companies`;
+    saveSheets(); saveState();
+    info.textContent = `${sheets.length} sheet${sheets.length>1?'s':''} — ${companies.length} companies`;
     info.className = '';
-    selectedId = companies[0].id;
-    renderSidebar(); renderPanel(); refreshProgress();
+    renderSheetSelector();
+    selectedId = companies[0]?.id || null;
+    renderSidebar(); if (selectedId) renderPanel(); refreshProgress();
   } catch (err) { info.textContent = `Error: ${err.message}`; info.className = 'err'; }
 }
 
@@ -1956,6 +2116,123 @@ async function parseExcel(file) {
     };
     reader.readAsArrayBuffer(file);
   });
+}
+
+// ============================================================
+//  Email flow helpers
+// ============================================================
+function startManualWrite(id) {
+  setState(id, { status: 'manual', subject: '', body: '', error: '', sent: false });
+}
+
+function manualDone(id) {
+  const subjectEl = document.getElementById('edit-subject-' + id);
+  const bodyEl    = document.getElementById('edit-body-'    + id);
+  const subject   = subjectEl ? subjectEl.innerText.trim() : '';
+  const body      = bodyEl ? bodyEl.innerHTML : '';
+  setState(id, { status: 'done', subject, body, error: '', sent: false });
+}
+
+function renderFollowupSection(companyId) {
+  if (!followupTemplates.length) {
+    return `<div style="font-size:12px;color:var(--text3);margin-top:8px;">Add follow-up templates in Settings to enable follow-ups.</div>`;
+  }
+  const opts = followupTemplates.map((t, i) =>
+    `<option value="${i}">${esc(t.name)}</option>`
+  ).join('');
+  return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em;">Follow-up</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select id="fu-select-${companyId}" class="topbar-input" style="width:auto;">
+        ${opts}
+      </select>
+      <button class="btn btn-primary" onclick="generateFollowup('${companyId}')">Generate Follow-up</button>
+    </div>
+    <div id="fu-panel-${companyId}" style="margin-top:12px;"></div>
+  </div>`;
+}
+
+async function generateFollowup(companyId) {
+  const sel  = document.getElementById('fu-select-' + companyId);
+  const idx  = sel ? Number(sel.value) : 0;
+  const tmpl = followupTemplates[idx];
+  if (!tmpl) return;
+
+  const c  = companies.find(x => String(x.id) === String(companyId));
+  if (!c) return;
+  const fn = c.poc.trim().split(' ')[0];
+
+  const panel = document.getElementById('fu-panel-' + companyId);
+  if (panel) panel.innerHTML = `<div class="loading-msg">Generating follow-up...</div>`;
+
+  let body = tmpl.body || '';
+
+  if (tmpl.useGemini) {
+    if (!apiKey()) { flash('Enter Gemini API key first.'); return; }
+    try {
+      const prompt = `Write a follow-up email based on this template. Fill in any placeholders and tailor it.
+Company: ${c.name} (${c.sector}). POC first name: ${fn}.
+Template: ${body.replace(/\{\{COMPANY\}\}/g, c.name).replace(/\{\{FIRST_NAME\}\}/g, fn)}
+Rules: ${tmpl.rules || 'Keep it brief and professional.'}
+Output only SUBJECT: and BODY: like a standard email. No commentary.`;
+      const resp = await fetch((await geminiUrl()) + encodeURIComponent(apiKey()), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: 'Output only SUBJECT: and BODY:. No preamble.' }] },
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+        })
+      });
+      const data = await resp.json();
+      const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const sm   = raw.match(/^SUBJECT:\s*(.+)$/m);
+      const bm   = raw.match(/^BODY:\s*\n([\s\S]+)/m);
+      if (sm) body = `${sm[1].trim()}\n\n${bm ? bm[1].trim() : raw}`;
+      else    body = raw;
+    } catch (err) {
+      if (panel) panel.innerHTML = `<div class="err-box">${esc(String(err))}</div>`;
+      return;
+    }
+  } else {
+    body = body.replace(/\{\{COMPANY\}\}/g, c.name).replace(/\{\{FIRST_NAME\}\}/g, fn);
+  }
+
+  if (panel) {
+    const fuId = 'fu_' + companyId + '_' + Date.now();
+    panel.innerHTML =
+      `<div class="p-subject-label">Follow-up body</div>
+       <div class="p-body-editor" contenteditable="true" id="${fuId}">${bodyToHtml(body)}</div>
+       <div class="send-row" style="margin-top:8px;">
+         <button class="btn btn-primary" onclick="sendFollowup('${companyId}','${fuId}')">Send follow-up</button>
+         <button class="btn" onclick="draftFollowup('${companyId}','${fuId}')">Save as draft</button>
+       </div>`;
+  }
+}
+
+function sendFollowup(companyId, editorId) {
+  const c = companies.find(x => String(x.id) === String(companyId));
+  if (!c) return;
+  const el = document.getElementById(editorId);
+  const body = el ? el.innerHTML : '';
+  const st   = emailState[companyId] || {};
+  const subject = 'Re: ' + (st.subject || '');
+  // Re-use existing send flow with temporary subject override
+  const tmpState = { ...st, subject, body };
+  emailState[companyId] = tmpState;
+  triggerGmail(companyId, 'send');
+}
+
+function draftFollowup(companyId, editorId) {
+  const c = companies.find(x => String(x.id) === String(companyId));
+  if (!c) return;
+  const el = document.getElementById(editorId);
+  const body = el ? el.innerHTML : '';
+  const st   = emailState[companyId] || {};
+  const subject = 'Re: ' + (st.subject || '');
+  const tmpState = { ...st, subject, body };
+  emailState[companyId] = tmpState;
+  triggerGmail(companyId, 'draft');
 }
 
 // ============================================================
@@ -2222,7 +2499,7 @@ function hideContextMenu() {
 // ============================================================
 async function sendAll() {
   if (!gmailToken) { flash('Connect Gmail first.'); return; }
-  const pending = companies.filter(c => emailState[c.id]?.status === 'done' && !emailState[c.id]?.sent);
+  const pending = companies.filter(c => emailState[String(c.id)]?.status === 'done' && !emailState[String(c.id)]?.sent);
   if (!pending.length) { flash('No generated (unsent) emails ready.'); return; }
   if (!confirm(`Send ${pending.length} emails via Gmail? A 2-second delay between each.`)) return;
 
