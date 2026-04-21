@@ -366,6 +366,66 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 .attach-item-size { color: var(--text3); font-size: 11px; white-space: nowrap; }
 .attach-add-row { display: flex; gap: 8px; align-items: center; }
 
+/* ---- Tutorial modal ---- */
+#modal-tutorial {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+#tutorial-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 560px; max-height: 88vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#tutorial-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#tutorial-header h3 { font-size: 15px; font-weight: 600; }
+#tutorial-close {
+  background: transparent; border: none; color: var(--text2);
+  font-size: 18px; cursor: pointer; line-height: 1; padding: 0 2px;
+}
+#tutorial-close:hover { color: var(--text); }
+#tutorial-tabs {
+  display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.tut-tab {
+  font-size: 12px; padding: 8px 18px;
+  border: none; border-bottom: 2px solid transparent;
+  background: transparent; cursor: pointer; color: var(--text2);
+}
+.tut-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+#tutorial-body {
+  overflow-y: auto; padding: 20px 24px; flex: 1;
+}
+.tut-step {
+  display: flex; gap: 14px; margin-bottom: 20px;
+}
+.tut-step:last-child { margin-bottom: 0; }
+.tut-num {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+}
+.tut-text { font-size: 13px; line-height: 1.6; color: var(--text); }
+.tut-text strong { color: var(--accent); font-weight: 600; }
+.tut-text a { color: var(--accent); }
+.tut-note {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 14px;
+  font-size: 12px; color: var(--text2); margin-top: 16px; line-height: 1.6;
+}
+.tut-note strong { color: var(--text); }
+
 /* ---- Log view ---- */
 #view-log {
   display: none; flex: 1; overflow-y: auto; padding: 24px 28px;
@@ -398,6 +458,25 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     </label>
     <div id="login-err">Please fill in both fields.</div>
     <button class="btn btn-primary" onclick="saveProfile()">Continue</button>
+  </div>
+</div>
+
+<!-- ================================================================
+     TUTORIAL MODAL
+     ================================================================ -->
+<div id="modal-tutorial" style="display:none;">
+  <div id="tutorial-card">
+    <div id="tutorial-header">
+      <h3>Setup Guide</h3>
+      <button id="tutorial-close" onclick="closeTutorial()">&#10005;</button>
+    </div>
+    <div id="tutorial-tabs">
+      <button class="tut-tab active" id="tut-tab-gemini" onclick="switchTutTab('gemini')">Gemini API Key</button>
+      <button class="tut-tab"        id="tut-tab-gmail"  onclick="switchTutTab('gmail')">Gmail Client ID</button>
+    </div>
+    <div id="tutorial-body">
+      <!-- populated by switchTutTab() -->
+    </div>
   </div>
 </div>
 
@@ -457,6 +536,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     <button class="btn btn-stop"    id="stopBtn" style="display:none">Stop</button>
     <span id="progress-label"></span>
     <span id="api-warning">Enter your Gemini API key.</span>
+    <button class="btn" onclick="openTutorial()" title="Setup guide" style="margin-left:auto;">&#63; Help</button>
   </div>
 
   <!-- Tab bar -->
@@ -537,22 +617,8 @@ const DEFAULT_COMPANIES = [
 ];
 
 const DEFAULT_TEMPLATE = {
-  body: `Hello {{FIRST_NAME}},
-
-I hope this email finds you well. I am reaching out to express my keen interest in the Product Management Intern role at {{COMPANY}}. As a pre-final year Dual Degree student at IIT Kharagpur with hands-on experience building user-facing products and a strong foundation in data-driven decision-making, I believe I can bring meaningful value to your team.
-
-Most recently, I led product development for ScanAid, a clinical decision support tool designed for non-specialist clinicians in Tier-2/3 India. Alongside this, I have worked on projects spanning recommendation systems, funnel analytics, and AI-driven chatbots, and have co-led events and partnerships worth Rs. 35L+ as Events Head of Spring Fest. These experiences have shaped how I approach problems: grounded in user context, backed by data, and focused on measurable outcomes.
-
-[TAILORED PARAGRAPH]
-
-Please find my resume attached for your consideration. I would love to learn more about {{COMPANY}}'s product roadmap and explore how I can contribute. Please let me know if there is a convenient time to connect.
-
-Looking forward to hearing from you.
-
-Best regards,
-Uttkarsh Kumar
-IIT Kharagpur | +91 7303549462`,
-  rules: `1. Write exactly 2 to 3 sentences. Maximum 3 lines total. Be crisp and specific.\n2. Reference the company's actual product or the core problem they solve. Use their domain language.\n3. Draw a genuine connection to Uttkarsh's background (recommendation systems, funnel analytics, AI-driven chatbots, transaction-heavy platforms, B2B2C models, PRD writing) only where it fits naturally. Do not force it.\n4. Do not use generic praise. Be concrete.\n5. Do not mention "healthcare" anywhere. Frame ScanAid only as translating operational gaps into structured product decisions.\n6. Do not say "AI-driven healthcare chatbots", say "AI-driven chatbots."\n7. Do not use em dashes anywhere in the email. Use commas or colons instead.\n8. Do not use contractions like "I'm" or "I've", write "I am" and "I have" throughout.`
+  body:  '',
+  rules: ''
 };
 
 const DEFAULT_EXCEL_DESC = `Column B: Company name\nColumn C: POC (contact person full name)\nColumn D: Sector / industry\nColumn E: Email address\nColumn F: LinkedIn URL\n\nRow 1 is the header row and is skipped.`;
@@ -1637,6 +1703,74 @@ async function parseExcel(file) {
     };
     reader.readAsArrayBuffer(file);
   });
+}
+
+// ============================================================
+//  Tutorial
+// ============================================================
+const TUTORIAL_CONTENT = {
+  gemini: `
+    <div class="tut-step">
+      <div class="tut-num">1</div>
+      <div class="tut-text">Go to <strong><a href="https://aistudio.google.com" target="_blank">aistudio.google.com</a></strong> and sign in with your Google account.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">2</div>
+      <div class="tut-text">Click <strong>Get API key</strong> in the left sidebar.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">3</div>
+      <div class="tut-text">Click <strong>Create API key</strong> &rarr; select <strong>Create API key in new project</strong>.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">4</div>
+      <div class="tut-text">Copy the key and paste it into the <strong>Gemini Key</strong> field in the top bar of this app.</div>
+    </div>
+    <div class="tut-note">
+      <strong>Free tier limits:</strong> Gemini 2.5 Flash gives you 15 requests/minute and 1,500 requests/day — more than enough for bulk email generation.
+    </div>`,
+
+  gmail: `
+    <div class="tut-step">
+      <div class="tut-num">1</div>
+      <div class="tut-text">Go to <strong><a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a></strong> and create a new project (or select an existing one).</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">2</div>
+      <div class="tut-text">Go to <strong>APIs &amp; Services &rarr; Library</strong>, search for <strong>Gmail API</strong>, and click <strong>Enable</strong>.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">3</div>
+      <div class="tut-text">Go to <strong>APIs &amp; Services &rarr; OAuth consent screen</strong>. Choose <strong>External</strong>, fill in the app name (e.g. AutoEmail) and your email, then save.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">4</div>
+      <div class="tut-text">Go to <strong>APIs &amp; Services &rarr; Credentials &rarr; Create Credentials &rarr; OAuth client ID</strong>. Choose <strong>Web application</strong>.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">5</div>
+      <div class="tut-text">Under <strong>Authorized JavaScript origins</strong>, add the URL where you're running the app — e.g. <strong>https://your-site.netlify.app</strong> or <strong>http://127.0.0.1:5500</strong> for local use.</div>
+    </div>
+    <div class="tut-step">
+      <div class="tut-num">6</div>
+      <div class="tut-text">Click <strong>Create</strong>, copy the <strong>Client ID</strong>, and paste it into the <strong>Gmail Client ID</strong> field in the top bar, then click <strong>Connect</strong>.</div>
+    </div>
+    <div class="tut-note">
+      <strong>Still seeing "Access blocked"?</strong> Go back to Credentials, edit your OAuth Client ID, and make sure the exact URL of this page is listed under Authorized JavaScript origins. Changes take ~5 minutes to propagate.
+    </div>`
+};
+
+function openTutorial(tab) {
+  document.getElementById('modal-tutorial').style.display = 'flex';
+  switchTutTab(tab || 'gemini');
+}
+function closeTutorial() {
+  document.getElementById('modal-tutorial').style.display = 'none';
+}
+function switchTutTab(tab) {
+  document.getElementById('tutorial-body').innerHTML = TUTORIAL_CONTENT[tab];
+  document.getElementById('tut-tab-gemini').classList.toggle('active', tab === 'gemini');
+  document.getElementById('tut-tab-gmail').classList.toggle('active',  tab === 'gmail');
 }
 
 // ============================================================
