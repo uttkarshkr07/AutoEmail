@@ -247,6 +247,15 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 .dot.loading { background: var(--warn); }
 .dot.done    { background: var(--success); }
 .dot.error   { background: var(--danger); }
+.reply-badge {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+  box-shadow: 0 0 4px var(--accent);
+  animation: pulse-badge 1.8s ease-in-out infinite;
+}
+@keyframes pulse-badge {
+  0%,100% { opacity:1; } 50% { opacity:0.45; }
+}
 
 /* ---- Right panel ---- */
 #panel { flex: 1; padding: 24px 28px; overflow-y: auto; }
@@ -637,6 +646,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 
     <button class="btn btn-primary" id="genAllBtn">Generate all</button>
     <button class="btn"             id="sendAllBtn" onclick="sendAll()">Send all</button>
+    <button class="btn"             id="checkRepliesBtn" onclick="checkAllReplies()" title="Check replies for all sent emails">&#8635; Replies</button>
     <button class="btn btn-stop"    id="stopBtn" style="display:none">Stop</button>
     <span id="progress-label"></span>
     <span id="api-warning">Enter your Gemini API key.</span>
@@ -769,6 +779,7 @@ let followupTemplates = []; // [{ name, body, rules, useGemini }]
 let gmailToken      = null;
 let tokenClient     = null;
 let pendingGmail    = null;
+let unreadReplies   = new Set(); // company IDs with unseen replies
 
 // ============================================================
 //  Namespace helper
@@ -1297,8 +1308,12 @@ function dotClass(status) {
 // ============================================================
 function selectCompany(id) {
   selectedId = id;
+  unreadReplies.delete(String(id));
   document.querySelectorAll('.company-btn').forEach(b =>
     b.classList.toggle('active', String(b.dataset.id) === String(id)));
+  // Clear reply badge on this button
+  const badge = document.querySelector(`.company-btn[data-id="${id}"] .reply-badge`);
+  if (badge) badge.remove();
   renderPanel();
 }
 
@@ -2507,9 +2522,45 @@ async function checkForReplies(companyId) {
 
     emailState[sid] = { ...st, thread };
     saveState();
+    if (newCount && String(selectedId) !== sid) {
+      unreadReplies.add(sid);
+      // Update just this button's badge without full re-render
+      const btn = document.querySelector(`.company-btn[data-id="${sid}"]`);
+      if (btn && !btn.querySelector('.reply-badge')) {
+        const wrap = btn.querySelector('.dot')?.parentElement;
+        if (wrap) {
+          const badge = document.createElement('div');
+          badge.className = 'reply-badge';
+          badge.title = 'Unread reply';
+          wrap.insertBefore(badge, wrap.firstChild);
+        }
+      }
+    }
     if (String(selectedId) === sid) renderPanel();
     flash(newCount ? `&#10003; ${newCount} new repl${newCount > 1 ? 'ies' : 'y'} found!` : 'No new replies.');
   } catch (err) { flash('Check failed: ' + err.message); }
+}
+
+async function checkAllReplies() {
+  if (!gmailToken) { flash('Connect Gmail first.'); return; }
+  const btn = document.getElementById('checkRepliesBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Checking...'; }
+  const sent = companies.filter(c => emailState[String(c.id)]?.gmailThreadId);
+  if (!sent.length) {
+    flash('No sent emails with Gmail threads to check.');
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Replies'; }
+    return;
+  }
+  let totalNew = 0;
+  for (const c of sent) {
+    await checkForReplies(c.id);
+    // small pause to avoid hammering the API
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '&#8635; Replies'; }
+  // flash is already set by the last checkForReplies call; override with summary
+  const unread = unreadReplies.size;
+  flash(unread ? `&#10003; ${unread} compan${unread > 1 ? 'ies have' : 'y has'} new replies` : 'No new replies across all threads.');
 }
 
 function extractGmailBody(payload) {
@@ -2709,15 +2760,19 @@ function renderSidebarWithSearch() {
   }
   filtered.forEach(c => {
     const st  = emailState[c.id] || { status: 'pending' };
+    const hasUnread = unreadReplies.has(String(c.id));
     const btn = document.createElement('button');
-    btn.className = 'company-btn' + (c.id === selectedId ? ' active' : '');
+    btn.className = 'company-btn' + (String(c.id) === String(selectedId) ? ' active' : '');
     btn.dataset.id = c.id;
     btn.innerHTML =
       `<div class="cbtn-text">
         <div class="cbtn-name">${esc(c.name)}</div>
         <div class="cbtn-sector">${esc(c.sector)}</div>
       </div>
-      <div class="dot ${dotClass(st.status)}"></div>`;
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+        ${hasUnread ? `<div class="reply-badge" title="Unread reply"></div>` : ''}
+        <div class="dot ${dotClass(st.status)}"></div>
+      </div>`;
     btn.addEventListener('click', () => selectCompany(c.id));
     sb.appendChild(btn);
   });
