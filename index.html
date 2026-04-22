@@ -1393,23 +1393,32 @@ function renderPanel() {
           subject: st.subject, body: st.body, sentAt: st.sentAt, type: 'sent'
         }];
         const threadHtml = thread.map((msg, i) => {
-          const label     = msg.type === 'followup' ? 'Follow-up' : 'Email';
+          const label     = { sent:'Email', followup:'Follow-up', draft:'Draft', reply:'Reply' }[msg.type] || 'Message';
           const dateStr   = msg.sentAt ? new Date(msg.sentAt).toLocaleString('en-GB') : '';
-          const borderCol = msg.type === 'followup' ? 'var(--accent)' : 'var(--success)';
+          const borderCol = msg.type === 'reply'    ? 'var(--border)'
+                          : msg.type === 'followup' ? 'var(--accent)'
+                          : 'var(--success)';
           const statusTxt = msg.type === 'draft'
             ? `<span style="font-size:11px;color:var(--warn);">&#9998; Draft</span>`
-            : `<span style="font-size:11px;color:var(--text3);">&#10003; ${label}${dateStr ? ' &mdash; ' + dateStr : ''}</span>`;
+            : `<span style="font-size:11px;color:var(--text3);">${msg.type === 'reply' ? '&#8617;' : '&#10003;'} ${label}${dateStr ? ' &mdash; ' + dateStr : ''}</span>`;
+          const fromLine  = msg.type === 'reply' && msg.from
+            ? `<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">From: ${esc(msg.from)}</div>`
+            : '';
           return `<div style="border-left:3px solid ${borderCol};padding:10px 14px;margin-bottom:10px;background:var(--bg2);border-radius:0 6px 6px 0;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
               <div style="font-size:12px;font-weight:600;color:var(--text2);">${esc(msg.subject || '')}</div>
               ${statusTxt}
             </div>
+            ${fromLine}
             <div style="font-size:13px;color:var(--text2);line-height:1.6;">${bodyToHtml(msg.body || '')}</div>
           </div>`;
         }).join('');
         panel.innerHTML =
           toLine +
-          `<div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Thread (${thread.length})</div>
+          `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+             <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Thread (${thread.length})</div>
+             ${st.gmailThreadId ? `<button class="btn" style="font-size:11px;padding:3px 10px;" onclick="checkForReplies('${cid}')">&#8635; Check for replies</button>` : ''}
+           </div>
            ${threadHtml}
            ${renderFollowupSection(cid)}
            <div id="flash"></div>`;
@@ -2451,6 +2460,71 @@ async function draftFollowup(companyId, editorId) {
     flash('Follow-up draft saved — opening Gmail...');
     setTimeout(() => window.open('https://mail.google.com/mail/#drafts', '_blank'), 600);
   } catch (err) { flash('Draft failed: ' + err.message); }
+}
+
+// ============================================================
+//  Reply checking
+// ============================================================
+async function checkForReplies(companyId) {
+  const sid = String(companyId);
+  const st  = emailState[sid];
+  if (!gmailToken)        { flash('Connect Gmail first.'); return; }
+  if (!st?.gmailThreadId) { flash('No Gmail thread linked to this company.'); return; }
+
+  flash('Checking for replies...');
+  try {
+    const resp = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/threads/${st.gmailThreadId}?format=full`,
+      { headers: { 'Authorization': 'Bearer ' + gmailToken } }
+    );
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
+      throw new Error(err?.error?.message || 'HTTP ' + resp.status);
+    }
+    const data     = await resp.json();
+    const messages = data.messages || [];
+    const known    = new Set((st.thread || []).map(m => m.gmailMessageId).filter(Boolean));
+    const thread   = st.thread ? [...st.thread] : [];
+    let newCount   = 0;
+
+    for (const msg of messages) {
+      if (known.has(msg.id)) continue;
+      const headers    = msg.payload?.headers || [];
+      const fromHdr    = headers.find(h => h.name.toLowerCase() === 'from')?.value    || '';
+      const subjectHdr = headers.find(h => h.name.toLowerCase() === 'subject')?.value || '';
+      const dateHdr    = headers.find(h => h.name.toLowerCase() === 'date')?.value    || '';
+      thread.push({
+        subject: subjectHdr,
+        body:    extractGmailBody(msg.payload),
+        sentAt:  dateHdr ? new Date(dateHdr).toISOString() : new Date().toISOString(),
+        type:    'reply',
+        gmailMessageId: msg.id,
+        from:    fromHdr,
+      });
+      newCount++;
+    }
+
+    emailState[sid] = { ...st, thread };
+    saveState();
+    if (String(selectedId) === sid) renderPanel();
+    flash(newCount ? `&#10003; ${newCount} new repl${newCount > 1 ? 'ies' : 'y'} found!` : 'No new replies.');
+  } catch (err) { flash('Check failed: ' + err.message); }
+}
+
+function extractGmailBody(payload) {
+  if (!payload) return '';
+  if (payload.body?.data) {
+    const text = atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+    return payload.mimeType === 'text/html' ? text : esc(text).replace(/\n/g, '<br>');
+  }
+  const parts = payload.parts || [];
+  const html  = parts.find(p => p.mimeType === 'text/html');
+  if (html)  return extractGmailBody(html);
+  const plain = parts.find(p => p.mimeType === 'text/plain');
+  if (plain) return extractGmailBody(plain);
+  for (const p of parts) { const r = extractGmailBody(p); if (r) return r; }
+  return '';
 }
 
 // ============================================================
