@@ -268,6 +268,12 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
 
 .p-to { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
 .p-to strong { color: var(--text); }
+.recipient-select {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 13px; padding: 2px 6px; cursor: pointer;
+  max-width: 340px;
+}
+.recipient-select:focus { border-color: var(--accent); outline: none; }
 
 .p-subject-label {
   font-size: 11px; color: var(--text3);
@@ -793,6 +799,7 @@ let pendingGmail    = null;
 let unreadReplies   = new Set(); // company IDs with unseen replies
 let _driveSyncTimer = null;
 let _driveRestoreDone = false;
+let selectedRecipients = new Map(); // companyId → { poc, email }
 
 // ============================================================
 //  Namespace helper
@@ -1125,6 +1132,7 @@ async function loadProjectData() {
       : [];
   }
   activeSheetIds = sheets.map(s => s.id);
+  selectedRecipients = new Map();
   recomputeActiveCompanies();
 
   const ss = await DB.get('emailState', ns('state'));
@@ -1230,9 +1238,27 @@ function saveSheetColmaps(){ DB.put('settings', ns('sheet_colmaps'), JSON.string
 function saveFollowupTemplates() { DB.put('followupTemplates', ns('followup_templates'), JSON.stringify(followupTemplates)).catch(console.error); scheduleDriveSync(); }
 
 function recomputeActiveCompanies() {
-  companies = sheets
+  const flat = sheets
     .filter(s => activeSheetIds.includes(s.id))
     .flatMap(s => s.companies);
+  const seen = new Map(); // normalised name → index in result
+  const result = [];
+  for (const c of flat) {
+    const key = c.name.toLowerCase().trim();
+    if (seen.has(key)) {
+      const existing = result[seen.get(key)];
+      if (!existing.altRecipients) existing.altRecipients = [];
+      existing.altRecipients.push({ poc: c.poc, email: c.email });
+    } else {
+      seen.set(key, result.length);
+      result.push({ ...c });
+    }
+  }
+  companies = result;
+}
+
+function getRecipient(c) {
+  return selectedRecipients.get(String(c.id)) || { poc: c.poc, email: c.email };
 }
 
 function renderSheetSelector() {
@@ -1356,6 +1382,26 @@ const MAIL_PUNS = [
   "When in doubt, send snacks. Or puns. Or both.",
 ];
 
+function buildToLine(c) {
+  const all = [{ poc: c.poc, email: c.email }, ...(c.altRecipients || [])];
+  if (all.length === 1) {
+    return `<div class="p-to">To: <strong>${esc(c.poc)}</strong> &lt;${esc(c.email)}&gt;</div>`;
+  }
+  const current = getRecipient(c);
+  const options = all.map(r =>
+    `<option value="${esc(r.email)}"${r.email === current.email ? ' selected' : ''}>${esc(r.poc)} &lt;${esc(r.email)}&gt;</option>`
+  ).join('');
+  return `<div class="p-to">To: <select class="recipient-select" onchange="onRecipientChange('${esc(String(c.id))}',this.value)">${options}</select></div>`;
+}
+
+function onRecipientChange(companyId, email) {
+  const c = companies.find(x => String(x.id) === companyId);
+  if (!c) return;
+  const all = [{ poc: c.poc, email: c.email }, ...(c.altRecipients || [])];
+  const chosen = all.find(r => r.email === email);
+  if (chosen) selectedRecipients.set(companyId, chosen);
+}
+
 function renderPanel() {
   const panel = document.getElementById('panel');
   if (!companies.length) {
@@ -1369,7 +1415,7 @@ function renderPanel() {
   const c  = companies.find(x => String(x.id) === String(selectedId));
   const st = emailState[String(selectedId)] || { status: 'pending' };
   if (!c) return;
-  const toLine = `<div class="p-to">To: <strong>${esc(c.poc)}</strong> &lt;${esc(c.email)}&gt;</div>`;
+  const toLine = buildToLine(c);
 
   const cid = String(c.id);
 
@@ -1987,19 +2033,22 @@ async function generateOne(id) {
   const sid = String(id);
   const c = companies.find(x => String(x.id) === sid);
   if (!c) return;
+  // Use the currently selected recipient's poc/email for generation
+  const r  = getRecipient(c);
+  const cr = { ...c, poc: r.poc, email: r.email };
   setState(sid, { status: 'loading', subject: '', body: '', error: '', sent: false });
   try {
     if (template.useGemini === false) {
       // Plain substitution — no Gemini call
-      const fn      = c.poc.trim().split(' ')[0];
-      const htmlBody = subHtml(toEditorHtml(template.body || ''), c, fn)
+      const fn      = cr.poc.trim().split(' ')[0];
+      const htmlBody = subHtml(toEditorHtml(template.body || ''), cr, fn)
         .replace(/\[TAILORED PARAGRAPH\]/g, '');
-      const subject  = sub(template.subject || `Internship Application — {{COMPANY}}`, c, fn);
+      const subject  = sub(template.subject || `Internship Application — {{COMPANY}}`, cr, fn);
       setState(sid, { status: 'done', subject, body: htmlBody, error: '', sent: false });
     } else {
-      const result  = await callGemini(c);
+      const result  = await callGemini(cr);
       const htmlBody = result.tailored
-        ? buildHtmlBody(c, result.tailored)
+        ? buildHtmlBody(cr, result.tailored)
         : result.body;
       setState(sid, { status: 'done', subject: result.subject, body: htmlBody, error: '', sent: false });
     }
@@ -2342,9 +2391,10 @@ async function executeDirectSend(id) {
   const c = companies.find(x => String(x.id) === sid);
   const st = emailState[sid];
   if (!c || !st) return;
+  const r = getRecipient(c);
   flash('Sending...');
   try {
-    const raw  = buildRawEmail(c.email, st.subject, getHtmlBody(id));
+    const raw  = buildRawEmail(r.email, st.subject, getHtmlBody(id));
     const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
@@ -2366,11 +2416,11 @@ async function executeDirectSend(id) {
     // Write to log
     DB.get('logs', ns('log')).then(raw => {
       const log = raw ? JSON.parse(raw) : [];
-      log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt });
+      log.unshift({ pocName: r.poc, company: c.name, email: r.email, sentAt });
       DB.put('logs', ns('log'), JSON.stringify(log)).catch(console.error);
     });
     if (String(selectedId) === sid) renderPanel();
-    flash('&#10003; Sent to ' + esc(c.poc) + '!');
+    flash('&#10003; Sent to ' + esc(r.poc) + '!');
   } catch (err) { flash('Send failed: ' + err.message); }
 }
 
@@ -2379,9 +2429,10 @@ async function executeCreateDraft(id) {
   const c = companies.find(x => String(x.id) === sid);
   const st = emailState[sid];
   if (!c || !st) return;
+  const r = getRecipient(c);
   flash('Creating draft...');
   try {
-    const raw  = buildRawEmail(c.email, st.subject, getHtmlBody(id));
+    const raw  = buildRawEmail(r.email, st.subject, getHtmlBody(id));
     const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
@@ -2584,6 +2635,7 @@ async function sendFollowup(companyId, editorId) {
   const sid = String(companyId);
   const c   = companies.find(x => String(x.id) === sid);
   if (!c) return;
+  const r       = getRecipient(c);
   const el      = document.getElementById(editorId);
   const body    = el ? el.innerHTML : '';
   const st      = emailState[sid] || {};
@@ -2592,7 +2644,7 @@ async function sendFollowup(companyId, editorId) {
   flash('Sending follow-up...');
   try {
     // Pass gmailMessageId so Gmail threads the reply correctly
-    const raw  = buildRawEmail(c.email, subject, body, st.gmailMessageId || '');
+    const raw  = buildRawEmail(r.email, subject, body, st.gmailMessageId || '');
     const payload = { raw: toBase64Url(raw) };
     if (st.gmailThreadId) payload.threadId = st.gmailThreadId;
     const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
@@ -2620,6 +2672,7 @@ async function draftFollowup(companyId, editorId) {
   const sid = String(companyId);
   const c   = companies.find(x => String(x.id) === sid);
   if (!c) return;
+  const r       = getRecipient(c);
   const el      = document.getElementById(editorId);
   const body    = el ? el.innerHTML : '';
   const st      = emailState[sid] || {};
@@ -2627,7 +2680,7 @@ async function draftFollowup(companyId, editorId) {
   if (!gmailToken) { flash('Connect Gmail first.'); return; }
   flash('Creating follow-up draft...');
   try {
-    const raw  = buildRawEmail(c.email, subject, body, st.gmailMessageId || '');
+    const raw  = buildRawEmail(r.email, subject, body, st.gmailMessageId || '');
     const msg  = { raw: toBase64Url(raw) };
     if (st.gmailThreadId) msg.threadId = st.gmailThreadId;
     const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
