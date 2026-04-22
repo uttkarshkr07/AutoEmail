@@ -92,6 +92,7 @@ body {
 #login-card input:focus { border-color: var(--accent); }
 #login-card .btn-primary { padding: 9px; font-size: 13px; font-weight: 600; }
 #login-err { font-size: 12px; color: var(--danger); display: none; }
+#login-drive-note { font-size: 11px; color: var(--text3); margin-top: 10px; text-align: center; }
 
 /* ================================================================
    HOME SCREEN
@@ -114,7 +115,12 @@ body {
   flex: 1; overflow-y: auto;
   padding: 36px 40px;
 }
-#home-body h2 { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+#home-actions-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px;
+}
+#home-actions-bar h2 { font-size: 18px; font-weight: 600; margin: 0; }
+#restore-drive-btn { font-size: 12px; }
 
 #project-grid {
   display: grid;
@@ -536,6 +542,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     </label>
     <div id="login-err">Please fill in both fields.</div>
     <button class="btn btn-primary" onclick="saveProfile()">Continue</button>
+    <p id="login-drive-note">Your data will be backed up to Google Drive once you connect Gmail.</p>
   </div>
 </div>
 
@@ -604,7 +611,10 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     </div>
   </div>
   <div id="home-body">
-    <h2>Your Projects</h2>
+    <div id="home-actions-bar">
+      <h2>Your Projects</h2>
+      <button class="btn" id="restore-drive-btn" onclick="restoreFromDrive()" title="Restore all projects from your Google Drive backup" style="display:none;">&#8595; Restore from Drive</button>
+    </div>
     <div id="project-grid"></div>
   </div>
 </div>
@@ -650,6 +660,7 @@ select.topbar-input option { background: var(--bg3); color: var(--text); }
     <button class="btn btn-stop"    id="stopBtn" style="display:none">Stop</button>
     <span id="progress-label"></span>
     <span id="api-warning">Enter your Gemini API key.</span>
+    <span id="drive-sync-status" style="font-size:11px;margin-left:4px;"></span>
     <button class="btn" onclick="openTutorial()" title="Setup guide" style="margin-left:auto;">&#63; Help</button>
   </div>
 
@@ -780,6 +791,8 @@ let gmailToken      = null;
 let tokenClient     = null;
 let pendingGmail    = null;
 let unreadReplies   = new Set(); // company IDs with unseen replies
+let _driveSyncTimer = null;
+let _driveRestoreDone = false;
 
 // ============================================================
 //  Namespace helper
@@ -1207,14 +1220,14 @@ async function loadProjectData() {
 // ============================================================
 //  Persistence (fire-and-forget writes)
 // ============================================================
-function saveState()       { DB.put('emailState', ns('state'),       JSON.stringify(emailState)).catch(console.error); }
-function saveCompanies()   { DB.put('sheets',     ns('companies'),   JSON.stringify(companies)).catch(console.error); }
-function saveTemplate()    { DB.put('templates',  ns('template'),    JSON.stringify(template)).catch(console.error); }
-function saveAttachments() { DB.put('attachments',ns('attachments'), JSON.stringify(attachments)).catch(console.error); }
-function saveExcelDesc()   { DB.put('settings',   ns('excel_desc'),  excelDesc).catch(console.error); }
-function saveSheets()      { DB.put('sheets', ns('sheets'), JSON.stringify(sheets)).catch(console.error); }
-function saveSheetColmaps(){ DB.put('settings', ns('sheet_colmaps'), JSON.stringify(sheetColmaps)).catch(console.error); }
-function saveFollowupTemplates() { DB.put('followupTemplates', ns('followup_templates'), JSON.stringify(followupTemplates)).catch(console.error); }
+function saveState()       { DB.put('emailState', ns('state'),       JSON.stringify(emailState)).catch(console.error); scheduleDriveSync(); }
+function saveCompanies()   { DB.put('sheets',     ns('companies'),   JSON.stringify(companies)).catch(console.error); scheduleDriveSync(); }
+function saveTemplate()    { DB.put('templates',  ns('template'),    JSON.stringify(template)).catch(console.error); scheduleDriveSync(); }
+function saveAttachments() { DB.put('attachments',ns('attachments'), JSON.stringify(attachments)).catch(console.error); scheduleDriveSync(); }
+function saveExcelDesc()   { DB.put('settings',   ns('excel_desc'),  excelDesc).catch(console.error); scheduleDriveSync(); }
+function saveSheets()      { DB.put('sheets', ns('sheets'), JSON.stringify(sheets)).catch(console.error); scheduleDriveSync(); }
+function saveSheetColmaps(){ DB.put('settings', ns('sheet_colmaps'), JSON.stringify(sheetColmaps)).catch(console.error); scheduleDriveSync(); }
+function saveFollowupTemplates() { DB.put('followupTemplates', ns('followup_templates'), JSON.stringify(followupTemplates)).catch(console.error); scheduleDriveSync(); }
 
 function recomputeActiveCompanies() {
   companies = sheets
@@ -2076,18 +2089,31 @@ function initGmailClient(clientId) {
       'https://www.googleapis.com/auth/gmail.compose',
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/drive.appdata',
     ].join(' '),
     callback: onGmailToken
   });
 }
 
-function onGmailToken(resp) {
+async function onGmailToken(resp) {
   if (resp.error) {
     gmailToken = null; showGmailStatus(false);
     flash('Gmail auth failed: ' + resp.error); pendingGmail = null; return;
   }
   gmailToken = resp.access_token;
   showGmailStatus(true);
+  updateDriveSyncStatus('');
+
+  // On first connect each session, check Drive and restore if IDB has no projects
+  if (!_driveRestoreDone) {
+    _driveRestoreDone = true;
+    const projects = await getProjects();
+    if (!projects.length) {
+      const restored = await loadFromDrive();
+      if (restored) { await renderHome(); return; }
+    }
+  }
+
   if (pendingGmail) {
     const { id, action } = pendingGmail; pendingGmail = null;
     action === 'send' ? executeDirectSend(id) : executeCreateDraft(id);
@@ -2113,9 +2139,157 @@ function triggerGmail(id, action) {
 function showGmailStatus(ok) {
   document.getElementById('gmail-status').style.display = ok ? 'inline' : 'none';
   document.getElementById('gmailConnectBtn').textContent = ok ? 'Reconnect' : 'Connect';
+  const btn = document.getElementById('restore-drive-btn');
+  if (btn) btn.style.display = ok ? 'inline-flex' : 'none';
 }
 function resetGmailState() {
   gmailToken = tokenClient = pendingGmail = null; showGmailStatus(false);
+}
+
+// ============================================================
+//  Google Drive backup
+// ============================================================
+async function driveRequest(method, url, opts = {}) {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Authorization': `Bearer ${gmailToken}`, ...(opts.headers || {}) },
+    body: opts.body,
+  });
+  if (res.status === 401) { gmailToken = null; showGmailStatus(false); throw new Error('Drive auth expired — reconnect Gmail.'); }
+  if (!res.ok) { const txt = await res.text(); throw new Error(`Drive ${res.status}: ${txt}`); }
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('application/json') ? res.json() : res.text();
+}
+
+async function getDriveFileId() {
+  const data = await driveRequest('GET',
+    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D'autoemail-backup.json'&fields=files(id)`);
+  return data.files?.[0]?.id || null;
+}
+
+async function loadFromDrive() {
+  try {
+    updateDriveSyncStatus('loading');
+    const fileId = await getDriveFileId();
+    if (!fileId) { updateDriveSyncStatus(''); return false; }
+    const backup = await driveRequest('GET', `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    if (!backup?.data) { updateDriveSyncStatus(''); return false; }
+    // Restore flat key→value entries
+    for (const [key, val] of Object.entries(backup.data)) {
+      const store = idbStoreForKey(key);
+      await DB.put(store, key, val).catch(console.error);
+    }
+    // Restore user and projects
+    if (backup.user)     await DB.put('users',    'ae_user',      JSON.stringify(backup.user)).catch(console.error);
+    if (backup.projects) await DB.put('projects', 'ae_projects',  JSON.stringify(backup.projects)).catch(console.error);
+    updateDriveSyncStatus('ok', backup.exportedAt);
+    flash('Restored from Drive backup.');
+    return true;
+  } catch (e) {
+    console.error('Drive restore failed:', e);
+    updateDriveSyncStatus('error');
+    return false;
+  }
+}
+
+async function saveToDrive() {
+  if (!gmailToken) return;
+  updateDriveSyncStatus('saving');
+  try {
+    const user     = await DB.get('users',    'ae_user');
+    const projsRaw = await DB.get('projects', 'ae_projects');
+    const projects = projsRaw ? JSON.parse(projsRaw) : [];
+
+    const data = {};
+    // Global settings keys
+    for (const k of ['ae_gemini_model', 'ae_apikey', 'ae_gmailcid']) {
+      const v = await DB.get('settings', k);
+      if (v !== undefined && v !== null) data[k] = v;
+    }
+    // Per-project keys (excluding attachments — too large)
+    for (const p of projects) {
+      const pid = p.id;
+      const perProjKeys = [
+        ['emailState',       `ae_proj_${pid}_state`],
+        ['sheets',           `ae_proj_${pid}_sheets`],
+        ['sheets',           `ae_proj_${pid}_companies`],
+        ['templates',        `ae_proj_${pid}_template`],
+        ['settings',         `ae_proj_${pid}_excel_desc`],
+        ['settings',         `ae_proj_${pid}_sheet_colmaps`],
+        ['followupTemplates',`ae_proj_${pid}_followup_templates`],
+        ['settings',         `ae_proj_${pid}_apikey`],
+        ['settings',         `ae_proj_${pid}_gmailcid`],
+        ['settings',         `ae_proj_${pid}_theme`],
+        ['logs',             `ae_proj_${pid}_log`],
+      ];
+      for (const [store, key] of perProjKeys) {
+        const v = await DB.get(store, key);
+        if (v !== undefined && v !== null) data[key] = v;
+      }
+    }
+
+    const backup = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      user: user ? JSON.parse(user) : null,
+      projects,
+      data,
+    };
+
+    const body = JSON.stringify(backup);
+    const fileId = await getDriveFileId();
+
+    if (fileId) {
+      await driveRequest('PATCH',
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        { headers: { 'Content-Type': 'application/json' }, body });
+    } else {
+      const boundary = 'ae_boundary_' + Date.now();
+      const meta = JSON.stringify({ name: 'autoemail-backup.json', parents: ['appDataFolder'] });
+      const multipart = `--${boundary}\r\nContent-Type: application/json\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+      await driveRequest('POST',
+        `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`,
+        { headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart });
+    }
+
+    updateDriveSyncStatus('ok', new Date().toISOString());
+  } catch (e) {
+    console.error('Drive save failed:', e);
+    updateDriveSyncStatus('error');
+  }
+}
+
+function scheduleDriveSync() {
+  if (!gmailToken) return;
+  clearTimeout(_driveSyncTimer);
+  _driveSyncTimer = setTimeout(saveToDrive, 5000);
+}
+
+function updateDriveSyncStatus(state, ts) {
+  const el = document.getElementById('drive-sync-status');
+  if (!el) return;
+  if (state === 'saving' || state === 'loading') {
+    el.textContent = state === 'saving' ? '↑ Saving…' : '↓ Restoring…';
+    el.style.color = 'var(--warn, #e6a817)';
+  } else if (state === 'ok') {
+    const t = ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+    el.textContent = `✓ Backed up${t ? ' ' + t : ''}`;
+    el.style.color = 'var(--text3, #888)';
+  } else if (state === 'error') {
+    el.textContent = '⚠ Backup failed';
+    el.style.color = 'var(--danger, #e05c5c)';
+  } else {
+    el.textContent = '';
+  }
+}
+
+async function restoreFromDrive() {
+  const projects = await getProjects();
+  if (projects.length) {
+    if (!confirm('You already have local projects. Restoring from Drive will overwrite them. Continue?')) return;
+  }
+  await loadFromDrive();
+  await renderHome();
 }
 
 // ============================================================
