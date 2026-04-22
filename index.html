@@ -1388,14 +1388,29 @@ function renderPanel() {
       break;
     case 'done':
       if (st.locked && st.sent) {
-        // Locked sent email
-        const sentDate = st.sentAt ? new Date(st.sentAt).toLocaleString('en-GB') : 'unknown time';
+        // Build thread cards — seed from legacy fields if thread array not yet populated
+        const thread = st.thread && st.thread.length ? st.thread : [{
+          subject: st.subject, body: st.body, sentAt: st.sentAt, type: 'sent'
+        }];
+        const threadHtml = thread.map((msg, i) => {
+          const label     = msg.type === 'followup' ? 'Follow-up' : 'Email';
+          const dateStr   = msg.sentAt ? new Date(msg.sentAt).toLocaleString('en-GB') : '';
+          const borderCol = msg.type === 'followup' ? 'var(--accent)' : 'var(--success)';
+          const statusTxt = msg.type === 'draft'
+            ? `<span style="font-size:11px;color:var(--warn);">&#9998; Draft</span>`
+            : `<span style="font-size:11px;color:var(--text3);">&#10003; ${label}${dateStr ? ' &mdash; ' + dateStr : ''}</span>`;
+          return `<div style="border-left:3px solid ${borderCol};padding:10px 14px;margin-bottom:10px;background:var(--bg2);border-radius:0 6px 6px 0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+              <div style="font-size:12px;font-weight:600;color:var(--text2);">${esc(msg.subject || '')}</div>
+              ${statusTxt}
+            </div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.6;">${bodyToHtml(msg.body || '')}</div>
+          </div>`;
+        }).join('');
         panel.innerHTML =
           toLine +
-          `<div class="p-subject-label">Subject</div>
-           <div class="p-subject-box" style="background:var(--bg2);color:var(--text2);">${esc(st.subject)}</div>
-           <div class="p-body-editor" style="background:var(--bg2);color:var(--text2);cursor:default;">${bodyToHtml(st.body)}</div>
-           <div style="font-size:11px;color:var(--text3);margin-bottom:12px;">&#10003; Sent on ${sentDate}</div>
+          `<div style="margin-bottom:4px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;">Thread (${thread.length})</div>
+           ${threadHtml}
            ${renderFollowupSection(cid)}
            <div id="flash"></div>`;
       } else {
@@ -2082,14 +2097,19 @@ function resetGmailState() {
 // ============================================================
 //  Email construction
 // ============================================================
-function buildRawEmail(to, subject, htmlBody) {
+function buildRawEmail(to, subject, htmlBody, threadMsgId) {
+  const replyHeaders = threadMsgId
+    ? [`In-Reply-To: <${threadMsgId}>`, `References: <${threadMsgId}>`]
+    : [];
   if (!attachments.length) {
-    return ['To: '+to,'Subject: '+subject,'MIME-Version: 1.0',
-            'Content-Type: text/html; charset=utf-8','',htmlBody].join('\r\n');
+    return ['To: '+to, 'Subject: '+subject, 'MIME-Version: 1.0',
+            ...replyHeaders,
+            'Content-Type: text/html; charset=utf-8', '', htmlBody].join('\r\n');
   }
   const boundary = 'bound_' + Date.now();
   const parts = [
     'To: '+to, 'Subject: '+subject, 'MIME-Version: 1.0',
+    ...replyHeaders,
     `Content-Type: multipart/mixed; boundary="${boundary}"`, '',
     '--'+boundary, 'Content-Type: text/html; charset=utf-8', '', htmlBody,
   ];
@@ -2137,12 +2157,18 @@ async function executeDirectSend(id) {
       if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
       throw new Error(err?.error?.message || 'HTTP ' + resp.status);
     }
-    emailState[sid] = { ...st, sent: true, locked: true, sentAt: new Date().toISOString() };
+    const data    = await resp.json().catch(() => ({}));
+    const sentAt  = new Date().toISOString();
+    const gmailThreadId  = data.threadId  || st.gmailThreadId  || '';
+    const gmailMessageId = data.id        || '';
+    const thread  = st.thread ? [...st.thread] : [];
+    thread.push({ subject: st.subject, body: st.body, sentAt, type: 'sent', gmailMessageId });
+    emailState[sid] = { ...st, sent: true, locked: true, sentAt, gmailThreadId, gmailMessageId, thread };
     saveState();
     // Write to log
     DB.get('logs', ns('log')).then(raw => {
       const log = raw ? JSON.parse(raw) : [];
-      log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt: new Date().toISOString() });
+      log.unshift({ pocName: c.poc, company: c.name, email: c.email, sentAt });
       DB.put('logs', ns('log'), JSON.stringify(log)).catch(console.error);
     });
     if (String(selectedId) === sid) renderPanel();
@@ -2168,6 +2194,12 @@ async function executeCreateDraft(id) {
       if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
       throw new Error(err?.error?.message || 'HTTP ' + resp.status);
     }
+    const sentAt = new Date().toISOString();
+    const thread = st.thread ? [...st.thread] : [];
+    thread.push({ subject: st.subject, body: st.body, sentAt, type: 'draft' });
+    emailState[sid] = { ...st, thread };
+    saveState();
+    if (String(selectedId) === sid) renderPanel();
     flash('Draft created — opening Gmail...');
     setTimeout(() => window.open('https://mail.google.com/mail/#drafts', '_blank'), 600);
   } catch (err) { flash('Draft failed: ' + err.message); }
@@ -2350,29 +2382,75 @@ Output only SUBJECT: and BODY: like a standard email. No commentary.`;
   }
 }
 
-function sendFollowup(companyId, editorId) {
-  const c = companies.find(x => String(x.id) === String(companyId));
+async function sendFollowup(companyId, editorId) {
+  const sid = String(companyId);
+  const c   = companies.find(x => String(x.id) === sid);
   if (!c) return;
-  const el = document.getElementById(editorId);
-  const body = el ? el.innerHTML : '';
-  const st   = emailState[companyId] || {};
+  const el      = document.getElementById(editorId);
+  const body    = el ? el.innerHTML : '';
+  const st      = emailState[sid] || {};
   const subject = 'Re: ' + (st.subject || '');
-  // Re-use existing send flow with temporary subject override
-  const tmpState = { ...st, subject, body };
-  emailState[companyId] = tmpState;
-  triggerGmail(companyId, 'send');
+  if (!gmailToken) { flash('Connect Gmail first.'); return; }
+  flash('Sending follow-up...');
+  try {
+    // Pass gmailMessageId so Gmail threads the reply correctly
+    const raw  = buildRawEmail(c.email, subject, body, st.gmailMessageId || '');
+    const payload = { raw: toBase64Url(raw) };
+    if (st.gmailThreadId) payload.threadId = st.gmailThreadId;
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
+      throw new Error(err?.error?.message || 'HTTP ' + resp.status);
+    }
+    const data   = await resp.json().catch(() => ({}));
+    const sentAt = new Date().toISOString();
+    const thread = st.thread ? [...st.thread] : [{ subject: st.subject, body: st.body, sentAt: st.sentAt, type: 'sent' }];
+    thread.push({ subject, body, sentAt, type: 'followup', gmailMessageId: data.id || '' });
+    emailState[sid] = { ...st, gmailThreadId: data.threadId || st.gmailThreadId, gmailMessageId: data.id || st.gmailMessageId, thread };
+    saveState();
+    if (String(selectedId) === sid) renderPanel();
+    flash('&#10003; Follow-up sent!');
+  } catch (err) { flash('Send failed: ' + err.message); }
 }
 
-function draftFollowup(companyId, editorId) {
-  const c = companies.find(x => String(x.id) === String(companyId));
+async function draftFollowup(companyId, editorId) {
+  const sid = String(companyId);
+  const c   = companies.find(x => String(x.id) === sid);
   if (!c) return;
-  const el = document.getElementById(editorId);
-  const body = el ? el.innerHTML : '';
-  const st   = emailState[companyId] || {};
+  const el      = document.getElementById(editorId);
+  const body    = el ? el.innerHTML : '';
+  const st      = emailState[sid] || {};
   const subject = 'Re: ' + (st.subject || '');
-  const tmpState = { ...st, subject, body };
-  emailState[companyId] = tmpState;
-  triggerGmail(companyId, 'draft');
+  if (!gmailToken) { flash('Connect Gmail first.'); return; }
+  flash('Creating follow-up draft...');
+  try {
+    const raw  = buildRawEmail(c.email, subject, body, st.gmailMessageId || '');
+    const msg  = { raw: toBase64Url(raw) };
+    if (st.gmailThreadId) msg.threadId = st.gmailThreadId;
+    const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + gmailToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) { gmailToken = null; showGmailStatus(false); }
+      throw new Error(err?.error?.message || 'HTTP ' + resp.status);
+    }
+    const sentAt = new Date().toISOString();
+    const thread = st.thread ? [...st.thread] : [{ subject: st.subject, body: st.body, sentAt: st.sentAt, type: 'sent' }];
+    thread.push({ subject, body, sentAt, type: 'draft' });
+    emailState[sid] = { ...st, thread };
+    saveState();
+    if (String(selectedId) === sid) renderPanel();
+    flash('Follow-up draft saved — opening Gmail...');
+    setTimeout(() => window.open('https://mail.google.com/mail/#drafts', '_blank'), 600);
+  } catch (err) { flash('Draft failed: ' + err.message); }
 }
 
 // ============================================================
