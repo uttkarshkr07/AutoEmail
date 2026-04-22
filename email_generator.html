@@ -1492,14 +1492,6 @@ function renderSettings() {
 
      <hr class="tmpl-divider">
 
-     ${sheets.length ? `<div class="tmpl-section">
-       <div class="tmpl-label">Excel column mapping</div>
-       <div class="tmpl-hint">Map each required field to a column index (0 = column A, 1 = B, 2 = C…). After changing, click Save then re-upload the sheet to apply.</div>
-       <div id="colmap-list">${renderColmapSectionsHtml()}</div>
-     </div>
-
-     <hr class="tmpl-divider">` : ''}
-
      <div class="tmpl-section" id="followup-templates-section">
        <div class="tmpl-label">Follow-up Templates</div>
        <div class="tmpl-hint">Templates used when sending follow-ups after a sent email. Toggle "Use Gemini AI" to auto-generate tailored follow-ups.</div>
@@ -1636,39 +1628,9 @@ function showSavedFlash() {
 function saveSettings() {
   template   = { ...draftTemplate };
   excelDesc  = draftExcelDesc;
-  // Save colmaps from inputs
-  sheets.forEach(s => {
-    const cm = {};
-    ['name','poc','sector','email','linkedin'].forEach(field => {
-      const el = document.getElementById(`colmap-${s.id}-${field}`);
-      if (el) cm[field] = parseInt(el.value, 10) || 0;
-    });
-    if (Object.keys(cm).length) sheetColmaps[s.id] = cm;
-  });
   saveTemplate();
   saveExcelDesc();
-  saveSheetColmaps();
   showSavedFlash();
-}
-
-function renderColmapSectionsHtml() {
-  if (!sheets.length) return '';
-  const fields = ['name','poc','sector','email','linkedin'];
-  const labels = { name:'Company name', poc:'POC', sector:'Sector', email:'Email', linkedin:'LinkedIn' };
-  return sheets.map(s => {
-    const cm = sheetColmaps[s.id] || { ...DEFAULT_COLMAP };
-    const inputs = fields.map(f =>
-      `<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);">${labels[f]}
-         <input id="colmap-${s.id}-${f}" class="np-input" type="number" min="0" style="width:70px;font-size:12px;padding:4px 8px;"
-           value="${cm[f] ?? DEFAULT_COLMAP[f]}" oninput="markDirty()">
-       </label>`
-    ).join('');
-    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;">
-      <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px;">📄 ${esc(s.name)}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:12px;">${inputs}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px;">After changing, click Save then re-upload this sheet to apply the new mapping.</div>
-    </div>`;
-  }).join('');
 }
 
 function resetSettingsToDefaults() {
