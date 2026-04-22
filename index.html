@@ -1302,13 +1302,25 @@ function selectCompany(id) {
   renderPanel();
 }
 
+const MAIL_PUNS = [
+  "Why did the email go to therapy? It had too many unresolved attachments.",
+  "I tried to write a cold email but I kept getting cold feet. Inbox zero, confidence zero.",
+  "Sending cold emails is a lot like fishing — mostly waiting, occasionally a bite, always wondering if the bait was good enough.",
+  "My emails are like boomerangs. I throw them out and hope they come back as interviews.",
+  "They say fortune favours the bold. My subject lines are bold. Still waiting on the fortune.",
+  "An email a day keeps unemployment away. Probably. The data is still loading.",
+  "I don't have a spam problem. I am the spam problem — from the recruiter's perspective.",
+  "Every cold email is just a warm email that hasn't met its recipient yet.",
+  "Draft. Redraft. Agonise. Send. Regret subject line. Repeat.",
+  "If at first you don't get a reply, cc: persistence.",
+];
+
 function renderPanel() {
   const panel = document.getElementById('panel');
   if (!companies.length) {
-    panel.innerHTML = `<div style="padding:48px 28px;text-align:center;">
-      <div style="font-size:32px;margin-bottom:12px;">📂</div>
-      <p style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">No companies yet</p>
-      <p style="font-size:13px;color:var(--text2);">Upload an Excel sheet using the <strong>+ Add Sheet</strong> button above to get started.</p>
+    const pun = MAIL_PUNS[Math.floor(Math.random() * MAIL_PUNS.length)];
+    panel.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;padding:48px 10%;">
+      <p style="font-size:14px;color:var(--text3);text-align:center;font-style:italic;line-height:1.7;max-width:480px;">${esc(pun)}</p>
     </div>`;
     return;
   }
@@ -2586,13 +2598,17 @@ function showContextMenu(x, y, c) {
     ${ctxField('ctx-cemail','Email',c.email)}
     ${ctxField('ctx-csector','Sector',c.sector)}
     ${ctxField('ctx-clinkedin','LinkedIn',c.linkedin)}
-    ${ctxField('ctx-cthreadid','Gmail thread ID',threadId)}
+    ${ctxField('ctx-cthreadid','Gmail thread ID',threadId,'In Gmail, open the thread and copy the last segment of the URL. e.g. mail.google.com/mail/u/0/#inbox/18f3a2b1c4d5e6f7 → paste: 18f3a2b1c4d5e6f7')}
     <button class="btn btn-primary" style="margin-top:4px;" onclick="saveContextEdit()">Save</button>`;
   document.body.appendChild(menu);
 }
 
-function ctxField(id, label, val) {
-  return `<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);">${label}
+function ctxField(id, label, val, hint) {
+  const hintBtn = hint
+    ? `<span title="${esc(hint)}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid var(--text3);color:var(--text3);font-size:9px;cursor:help;flex-shrink:0;margin-left:3px;">?</span>`
+    : '';
+  return `<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);">
+    <span style="display:flex;align-items:center;">${label}${hintBtn}</span>
     <input id="${id}" class="np-input" style="font-size:12px;padding:5px 8px;" value="${esc(val)}"></label>`;
 }
 
